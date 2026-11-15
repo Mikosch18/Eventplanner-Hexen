@@ -109,7 +109,6 @@ header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--card) 
 .hbar{max-width:1060px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .brand{font-weight:750;font-size:18px;text-decoration:none;color:inherit;margin-right:auto;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
 nav.main{display:flex;gap:3px;flex-wrap:wrap;order:3;width:100%}
-@media (min-width:760px){nav.main{order:0;width:auto}}
 nav.main a,.subnav a{padding:7px 14px;border-radius:999px;text-decoration:none;color:var(--muted);font-weight:550;font-size:14px;transition:background .15s,color .15s}
 nav.main a:hover,.subnav a:hover{color:var(--fg);background:color-mix(in srgb,var(--fg) 6%,transparent)}
 nav.main a.on,.subnav a.on{background:var(--acc-soft);color:color-mix(in srgb,var(--acc) 80%,var(--fg))}
@@ -117,10 +116,11 @@ nav.main a.on,.subnav a.on{background:var(--acc-soft);color:color-mix(in srgb,va
 .hintbar{max-width:1060px;margin:14px auto -4px;padding:0 16px}
 .hintbar .notice{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .hintbar .notice>span{flex:1;min-width:200px}
-#mode{background:none;border:1px solid var(--line);color:var(--fg);padding:4px 11px;font-size:19px;line-height:1.25;box-shadow:none}
-#mode:hover{background:color-mix(in srgb,var(--fg) 6%,transparent)}
+#mode,.who .icon{background:none;border:1px solid var(--line);color:var(--fg);padding:4px 11px;font-size:19px;line-height:1.25;box-shadow:none}
+#mode:hover,.who .icon:hover{background:color-mix(in srgb,var(--fg) 6%,transparent)}
+.who .icon{font-size:17px}.who .nm{display:inline-block;max-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+@media (max-width:520px){.who .nm{display:none}}   /* Handy: nur ⚙️, Name steht im Konto-Dialog */
 @media (max-width:759px){
-  .who .badge{display:none}                 /* Kopf auf dem Handy kurz halten */
   nav.main a{padding:6px 11px;font-size:13.5px}
   .hbar{padding:9px 14px;gap:8px}
 }
@@ -159,9 +159,9 @@ button:hover,.btn:hover{filter:brightness(1.08)}button:active,.btn:active{transf
 button:disabled{opacity:.5;cursor:default;filter:none}
 .sec{background:color-mix(in srgb,var(--fg) 6%,transparent);color:var(--fg);border:1px solid var(--line)}
 .reset{padding:3px 10px;margin-top:6px}
-.bell{padding:4px 10px;position:relative}.bell .nbadge{margin-left:2px}
+.bell .nbadge{margin-left:2px;font-size:10px}
 ul.inbox{list-style:none;padding:0;margin:0;max-height:60vh;overflow:auto}
-ul.inbox li{border-bottom:1px solid var(--line)}ul.inbox li.new{border-left:3px solid var(--acc);padding-left:6px}
+ul.inbox li{border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:6px}ul.inbox li a{flex:1}ul.inbox li button{margin-top:8px}ul.inbox li.new{border-left:3px solid var(--acc);padding-left:6px}
 ul.inbox a{display:block;padding:8px 2px;color:inherit;text-decoration:none}
 .danger{background:var(--danger);color:#fff}
 .link{background:none;border:0;color:var(--acc);padding:0;font-weight:550;box-shadow:none!important}
@@ -347,6 +347,7 @@ const fullName=u=>!u?'?':u.real&&u.real!==u.name?`${u.name} (${u.real})`:u.name;
 const badge=e=>{const t=typeOf(e);return `<span class="badge" style="--c:${esc(t.color)}">${esc(t.name)}</span>`};
 // Rechte aller Rollen addieren sich
 const can=p=>!!me&&(me.is_owner||me.roles.some(r=>roleById(r)?.perms.includes(p)));
+const myRoles=()=>me.is_owner?'👑 Besitzer':me.roles.map(r=>roleById(r)?.name).filter(Boolean).join(', ')||'keine Rolle';
 const rolesOf=id=>db.proles.filter(x=>x.user_id===id).map(x=>x.role_id);
 // Nur Anzeige – durchgesetzt wird es in guard_profile_roles()/guard_role()
 const mayGrant=r=>me.is_owner||(can('users.manage')?r.perms.every(can):can('users.approve')&&r.approvable);
@@ -453,22 +454,37 @@ function stats(evId){
 // Infoglocke: Einträge schreibt nur der Server (notify_send), gelesen markiert inbox_read()
 // shortcut: Zahl zählt nur die letzten 50 – mehr Ungelesene zeigt sie als 50; bei Bedarf eigene Zählabfrage
 const inboxQ=()=>sb.from('inbox').select('*').order('created_at',{ascending:false}).limit(50);
-const bellN=()=>(db.inbox||[]).filter(x=>!x.read_at).length;
+const unseen=n=>!('seen_at' in n?n.seen_at:n.read_at);   // Zahl = noch nicht gesehen; vor Migration 024 gab es nur read_at
+const bellN=()=>(db.inbox||[]).filter(unseen).length;
 const bellHtml=()=>`🔔${bellN()?`<span class="nbadge">${bellN()}</span>`:''}`;
 const bellLabel=()=>'Benachrichtigungen'+(bellN()?` (${bellN()} neu)`:'');
 const drawBell=()=>{const b=$('#bell'); if(b){b.innerHTML=bellHtml(); b.title=bellLabel(); b.setAttribute('aria-label',bellLabel())}};
 async function bellDialog(){
-  const list=db.inbox||[];
-  dlg.innerHTML=`<h3>🔔 Benachrichtigungen</h3>${list.length?`<ul class="inbox">${list.map(n=>`<li class="${n.read_at?'':'new'}">
-    <a href="${/^#[\w\/-]*$/.test(n.url||'')?esc(n.url):'#'}" data-close><b>${esc(n.title)}</b>${n.body?`<div class="small">${esc(n.body)}</div>`:''}
-    <div class="muted small">${esc(fmtDT(n.created_at))}</div></a></li>`).join('')}</ul>`:'<p class="muted">Noch keine Benachrichtigungen.</p>'}
-    <p class="muted small">Die letzten 50, höchstens 60 Tage. Was hier landet, stellst du über deinen Namen oben → Benachrichtigungen ein.</p>
-    <div class="row end" style="margin-top:12px"><button type="button" class="sec" id="bclose">Schließen</button></div>`;
-  dlg.showModal(); $('#bclose').onclick=()=>dlg.close();
-  dlg.querySelectorAll('[data-close]').forEach(a=>a.onclick=()=>dlg.close());
-  if(!list.some(n=>!n.read_at))return;
-  const {error}=await sb.rpc('inbox_read');
-  if(!error){const now=new Date().toISOString(); list.forEach(n=>n.read_at??=now); drawBell()}
+  const v30=brand.dbv>=30, list=db.inbox||[];   // vor Migration 024: Öffnen der Glocke = alles gelesen, kein Löschen
+  const del=async id=>{if((await sb.rpc('inbox_delete',{nid:id})).error)return;
+    list.splice(0,list.length,...(id==null?[]:list.filter(x=>x.id!==id))); draw(); drawBell()};
+  const draw=()=>{
+    dlg.innerHTML=`<h3>🔔 Benachrichtigungen</h3>${list.length?`<ul class="inbox">${list.map(n=>`<li class="${n.read_at?'':'new'}">
+      <a href="${/^#[\w\/-]*$/.test(n.url||'')?esc(n.url):'#'}" data-open="${esc(n.id)}"><b>${esc(n.title)}</b>${n.body?`<div class="small">${esc(n.body)}</div>`:''}
+      <div class="muted small">${esc(fmtDT(n.created_at))}</div></a>
+      ${v30?`<button type="button" class="sec small" data-del="${esc(n.id)}" title="Löschen" aria-label="Löschen">✕</button>`:''}</li>`).join('')}</ul>`
+      :'<p class="muted">Keine Benachrichtigungen.</p>'}
+      <p class="muted small">${v30?'Hervorgehoben = noch nicht geöffnet. ':''}Die letzten 50, höchstens 60 Tage. Was hier landet, stellst du über deinen Namen oben → Benachrichtigungen ein.</p>
+      <div class="row between" style="margin-top:12px">${v30&&list.length?'<button type="button" class="danger" id="bdelall">Alle löschen</button>':'<span></span>'}
+        <button type="button" class="sec" id="bclose">Schließen</button></div>`;
+    $('#bclose').onclick=()=>dlg.close();
+    $('#bdelall')?.addEventListener('click',()=>confirm('Alle Benachrichtigungen löschen?')&&del(null));
+    dlg.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>del(Number(b.dataset.del)));
+    dlg.querySelectorAll('[data-open]').forEach(a=>a.onclick=async ev=>{ev.preventDefault();
+      const n=list.find(x=>String(x.id)===a.dataset.open);
+      // erst speichern, dann wechseln – sonst lädt die neue Seite den alten Stand
+      if(v30&&!n.read_at&&!(await sb.rpc('inbox_open',{nid:n.id})).error)n.read_at=new Date().toISOString();
+      dlg.close(); location.hash=a.getAttribute('href')});
+  };
+  draw(); dlg.showModal();
+  if(!list.some(unseen))return;
+  const {error}=await sb.rpc(v30?'inbox_seen':'inbox_read');
+  if(!error){const now=new Date().toISOString(); list.forEach(n=>v30?(n.seen_at??=now):(n.read_at??=now)); drawBell()}
 }
 // zurück in den Tab/die App: nur die Glocke nachladen, nicht alles
 document.addEventListener('visibilitychange',async()=>{
@@ -556,11 +572,11 @@ async function render(){
     curView=view||(feat('board')?'board':'events');   // ohne Hash startet die Pinnwand, sonst die Termine
     if((curView==='board'&&!feat('board'))||(curView==='ideas'&&!feat('ideas')))curView='events';
     drawNav(); drawHint();
-    who.innerHTML=(db.inbox?`<button type="button" class="sec bell" id="bell" onclick="bellDialog()" title="${bellLabel()}" aria-label="${bellLabel()}">${bellHtml()}</button>`:'')
-    +`<span class="badge">${me.is_owner?'👑 Besitzer':esc(me.roles.map(r=>roleById(r)?.name).filter(Boolean).join(', '))}</span>`
-    +`<button class="link" onclick="accountDialog()" title="Mein Konto und Zwei-Faktor-Anmeldung">`
-    +`${mfaState.has?'🔐':'⚙️'} ${esc(me.name)}</button>`
-    +`<button class="sec" onclick="logout()">Abmelden</button>`;
+    // Kopf kompakt: Symbol-Knöpfe, Rolle nur im Tooltip und im Konto-Dialog
+    who.innerHTML=(db.inbox?`<button type="button" class="sec icon bell" id="bell" onclick="bellDialog()" title="${bellLabel()}" aria-label="${bellLabel()}">${bellHtml()}</button>`:'')
+    +`<button class="link" onclick="accountDialog()" aria-label="Mein Konto: ${esc(me.name)}" title="Mein Konto (${esc(myRoles())}) und Zwei-Faktor-Anmeldung">`
+    +`${mfaState.has?'🔐':'⚙️'} <span class="nm">${esc(me.name)}</span></button>`
+    +`<button class="sec icon" onclick="logout()" title="Abmelden" aria-label="Abmelden">🚪</button>`;
     // einmal je Gerät aktiv fragen statt nur still anzubieten; "Nicht jetzt" merkt sich das
     if(mfa.ok&&!mfa.has&&!store('mfaSeen'))return viewMfaEnroll(false);
     const ev=db.events.find(e=>e.id===id);
@@ -584,7 +600,7 @@ async function logout(){loginMsg='';hint.innerHTML='';
 // ---------- Zwei-Faktor-Anmeldung ----------
 // Supabase prüft den Code; die DB-Regeln sehen die erreichte Stufe im Token (aal1 / aal2).
 const factors=async()=>((await sb.auth.mfa.listFactors()).data?.totp||[]).filter(f=>f.status==='verified');
-const NEED_DB=29;   // bei jeder neuen Migration hier UND in der Migration hochzählen
+const NEED_DB=30;   // bei jeder neuen Migration hier UND in der Migration hochzählen
 let dbState={v:null,ok:true,missing:[]};
 async function checkDb(){
   // db_check() legt pruefen.sql an und nennt jede fehlende Datei einzeln – genauer als die Versionsnummer,
@@ -752,7 +768,7 @@ const notiChans=()=>[...['mail','push'].filter(feat),...(brand.dbv>=29?['bell']:
 async function accountDialog(){
   const psub=await pushSub();
   const fs=await factors(), need=mfaState.req;
-  openDialog(`<h3>Mein Konto</h3><p class="muted small">${esc(me.real)}</p>
+  openDialog(`<h3>Mein Konto</h3><p class="muted small">${esc(me.real)} · <span class="badge">${esc(myRoles())}</span></p>
     ${feat('nick')?`<label>Spitzname <span class="muted">(leer = echter Name)</span><input name="nick" maxlength="30" value="${esc(me.nick)}"></label>
       <p class="muted small" style="margin:4px 0 0">Erscheint überall statt deines Namens. Die Verwaltung sieht weiterhin beides.</p>`:''}
     <h4>Zwei-Faktor-Anmeldung</h4>
