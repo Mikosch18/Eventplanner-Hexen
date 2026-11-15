@@ -553,7 +553,7 @@ async function logout(){loginMsg='';hint.innerHTML='';
 // ---------- Zwei-Faktor-Anmeldung ----------
 // Supabase prüft den Code; die DB-Regeln sehen die erreichte Stufe im Token (aal1 / aal2).
 const factors=async()=>((await sb.auth.mfa.listFactors()).data?.totp||[]).filter(f=>f.status==='verified');
-const NEED_DB=27;   // bei jeder neuen Migration hier UND in der Migration hochzählen
+const NEED_DB=28;   // bei jeder neuen Migration hier UND in der Migration hochzählen
 let dbState={v:null,ok:true,missing:[]};
 async function checkDb(){
   // db_check() legt pruefen.sql an und nennt jede fehlende Datei einzeln – genauer als die Versionsnummer,
@@ -915,7 +915,7 @@ function viewEvent(id,forUser=me.id){
     &&(!x||x.status==='vielleicht'||(x.status==='ja'&&x.ride==='need'&&!x.with))});
   const resBlock=drv?`<div class="card"><h3>🎟 Plätze reservieren</h3>
     <p class="muted small" style="margin:0 0 6px">Auch für Personen, die noch nicht geantwortet haben. Sagen sie zu, fahren sie
-      ${forUser===me.id?'bei dir':'bei '+esc(userById(forUser)?.name)} mit; sagen sie ab, wird der Platz wieder frei.</p>
+      ${forUser===me.id?'bei dir':'bei '+esc(userById(forUser)?.name)} mit; sagen sie ab, wird der Platz wieder frei. Wer schon zugesagt hat und Mitfahrt sucht, fährt sofort mit.</p>
     <ul class="people">${resv.filter(r=>r.driver_id===forUser).map(r=>`<li><b>${esc(userById(r.user_id)?.name||'?')}</b>
       <button type="button" class="sec small" data-resdel="${esc(r.user_id)}" title="Reservierung zurücknehmen" aria-label="Reservierung zurücknehmen">✕</button></li>`).join('')}</ul>
     ${free(parts,forUser,null,resv)<1?'<p class="muted small">Kein Platz mehr frei.</p>'
