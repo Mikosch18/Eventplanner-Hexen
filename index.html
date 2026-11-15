@@ -158,6 +158,7 @@ button,.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;bor
 button:hover,.btn:hover{filter:brightness(1.08)}button:active,.btn:active{transform:scale(.97)}
 button:disabled{opacity:.5;cursor:default;filter:none}
 .sec{background:color-mix(in srgb,var(--fg) 6%,transparent);color:var(--fg);border:1px solid var(--line)}
+.reset{padding:3px 10px;margin-top:6px}
 .danger{background:var(--danger);color:#fff}
 .link{background:none;border:0;color:var(--acc);padding:0;font-weight:550;box-shadow:none!important}
 fieldset{border:0;padding:0;margin:14px 0 0;min-width:0}legend{font-size:13px;font-weight:600;color:var(--muted);padding:0}
@@ -285,10 +286,12 @@ const toLocalInput=d=>{const x=new Date(d);x.setMinutes(x.getMinutes()-x.getTime
 const opts=(o,sel)=>Object.entries(o).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${v}</option>`).join('');
 let sb=null, me=null, recovery=false, seq=0, loginMsg='', curView='';
 let db={users:[],roles:[],types:[],events:[],parts:{},posts:[],reads:[],
-        groups:[],members:[],targets:[],polls:{},proles:[],pollOpts:[],results:{},myVotes:[],reactions:[],media:[],ideas:[],invites:[]};
+        groups:[],members:[],targets:[],polls:{},proles:[],pollOpts:[],results:{},myVotes:[],reactions:[],media:[],ideas:[],invites:[],resv:[]};
 const IST={neu:'🆕 Neu',geplant:'📌 Geplant',umgesetzt:'✅ Umgesetzt',abgelehnt:'🚫 Abgelehnt'};
-let brand={name:'Eventplaner',logo_url:null,bg_url:null,theme:'glass',accent:'#4f46e5',
+// = Spalten-Defaults von app_settings; „↺ Standard" in den Einstellungen setzt darauf zurück (features null = alles an)
+const BRAND_DEF={name:'Eventplaner',logo_url:null,bg_url:null,theme:'glass',accent:'#4f46e5',
            archive_events_days:null,archive_posts_days:null,reply_anon_allowed:true,features:null};
+let brand={...BRAND_DEF};
 const httpsUrl=u=>/^https:\/\/[^"'()\s\\]+$/.test(u||'')?u:null;  // nur das darf in url(...) landen
 const EMOJI=['👍','❤️','😂','🎉','👏'];
 let bflt={q:'',unread:false,open:false,archive:false};
@@ -380,7 +383,9 @@ function applyBrand(){
   store('accentFg',fg); store('bg',bg||'');
   // Das Manifest ist eine echte Datei (manifest.json) – ein zur Laufzeit erzeugtes reicht für Push auf dem
   // iPhone nicht. Name und Symbol auf dem Home-Bildschirm nimmt iOS aber aus diesen beiden, die bleiben dynamisch.
-  const icon=httpsUrl(brand.logo_url);
+  // Android liest beides nur aus dem Manifest → mit eigenem Namen/Symbol das aus der Datenbank (useManifest).
+  const icon=httpsUrl(brand.icon_url)||httpsUrl(brand.logo_url);
+  if(!isIOS()&&(brand.icon_url||brand.name!==BRAND_DEF.name))useManifest();
   $('link[rel="apple-touch-icon"]').href=icon||'icon-192.png';
   let an=document.querySelector('meta[name="apple-mobile-web-app-title"]');
   if(!an){an=document.createElement('meta');an.name='apple-mobile-web-app-title';document.head.append(an)}
@@ -392,6 +397,14 @@ function applyBrand(){
   let l=document.querySelector('link[rel=icon]');
   if(!l){l=document.createElement('link');l.rel='icon';document.head.append(l)}
   l.href=brand.logo_url||'logo.svg';
+}
+// Manifest aus den Einstellungen (app_manifest, Migration 021). Erst prüfen, dann umschalten – fehlt die Funktion
+// oder nimmt Supabase den Schlüssel in der Adresse nicht an, bleibt manifest.json und die App installierbar.
+async function useManifest(){
+  const l=$('link[rel=manifest]'), u=`${SUPABASE_URL}/rest/v1/rpc/app_manifest?u=${encodeURIComponent(new URL('./',location.href).href)}`
+    +`&apikey=${encodeURIComponent(SUPABASE_KEY)}`;
+  if(l.href===u)return;
+  try{const r=await fetch(u); if(r.ok&&(await r.json())?.name)l.href=u}catch(e){}
 }
 async function loadBrand(){
   const [{data},v]=await Promise.all([sb.from('app_settings').select('*').maybeSingle(),sb.rpc('db_version')]);
@@ -414,25 +427,28 @@ const capChip=e=>!e.max_parts?'':full(e)?'<span class="chip danger">🔒 Ausgebu
 const rideText=x=>x.status!=='ja'?'':x.ride==='drive'?`🚗 fährt (${x.seats} Plätze)`:x.ride==='need'?(x.with?`mitfahrend bei ${esc(userById(x.with)?.name)}`:'<span class="warn">sucht Mitfahrt</span>'):'eigene Anreise';
 const byText=(x,uid)=>x.by&&x.by!==uid?` <span class="by">✏️ eingetragen von ${esc(userById(x.by)?.name||'jemand anderem')}</span>`:'';
 
-// freie Plätze bei Fahrer (Anzeige; verbindlich prüft der DB-Trigger check_part)
-function free(parts,driverId,except){
+// freie Plätze bei Fahrer (Anzeige; verbindlich prüft der DB-Trigger check_part) – Reservierungen anderer belegen auch
+function free(parts,driverId,except,resv=[]){
   const d=parts[driverId];
   if(!d||d.status!=='ja'||d.ride!=='drive')return 0;
-  return d.seats-Object.entries(parts).filter(([u,x])=>u!==except&&x.status==='ja'&&x.with===driverId).length;
+  return d.seats-Object.entries(parts).filter(([u,x])=>u!==except&&x.status==='ja'&&x.with===driverId).length
+    -resv.filter(r=>r.driver_id===driverId&&r.user_id!==except).length;
 }
-{const p={d:{status:'ja',ride:'drive',seats:2},a:{status:'ja',ride:'need',with:'d'},b:{status:'nein',with:'d'}};
- console.assert(free(p,'d')===1&&free(p,'d','a')===2&&free(p,'a')===0,'Selbsttest free() fehlgeschlagen')}
+{const p={d:{status:'ja',ride:'drive',seats:2},a:{status:'ja',ride:'need',with:'d'},b:{status:'nein',with:'d'}}, r=[{driver_id:'d',user_id:'c'}];
+ console.assert(free(p,'d')===1&&free(p,'d','a')===2&&free(p,'a')===0&&free(p,'d',null,r)===0&&free(p,'d','c',r)===1,
+   'Selbsttest free() fehlgeschlagen')}
 
 function stats(evId){
   const p=Object.entries(db.parts[evId]||{}).filter(([u])=>userById(u)).map(([,x])=>x);
   const yes=p.filter(x=>x.status==='ja'), drivers=yes.filter(x=>x.ride==='drive');
-  const seats=drivers.reduce((s,x)=>s+x.seats,0), riding=yes.filter(x=>x.ride==='need'&&x.with).length;
+  const seats=drivers.reduce((s,x)=>s+x.seats,0), riding=yes.filter(x=>x.ride==='need'&&x.with).length
+    +db.resv.filter(r=>r.event_id===evId).length;
   return {yes:yes.length,maybe:p.filter(x=>x.status==='vielleicht').length,free:seats-riding,open:yes.filter(x=>x.ride==='need'&&!x.with).length};
 }
 
 // shortcut: lädt bei jedem Seitenwechsel alles neu, kein Live-Update – reicht für Vereinsgröße; bei Bedarf Supabase Realtime nutzen
 async function loadAll(){
-  const [u,r,t,e,p,po,rd,md,id,gr,gm,ei,pr]=await Promise.all([
+  const [u,r,t,e,p,po,rd,md,id,gr,gm,ei,pr,rr]=await Promise.all([
     sb.from('profiles').select('*').order('name'),   // * statt Spaltenliste: läuft auch ohne Migration 016
     sb.from('roles').select('*').order('name'),
     sb.from('event_types').select('*').order('name'),
@@ -445,9 +461,11 @@ async function loadAll(){
     sb.from('groups').select('*').order('name'),
     sb.from('group_members').select('*'),
     sb.from('event_invites').select('*'),
-    sb.from('profile_roles').select('*')]);
+    sb.from('profile_roles').select('*'),
+    sb.from('ride_reservations').select('*')]);
   const err=u.error||r.error||t.error||e.error||p.error||po.error||rd.error||md.error||pr.error; if(err)throw err;
   db.proles=pr.data;
+  db.resv=rr.error?[]:rr.data;   // ohne Migration 021: keine Reservierungen
   db.posts=po.data; db.reads=rd.data; db.media=md.data;
   db.ideas=id.error?[]:id.data;   // fehlt die Migration, bleibt der Reiter einfach leer
   db.groups=gr.error?[]:gr.data; db.members=gm.error?[]:gm.data;
@@ -535,7 +553,7 @@ async function logout(){loginMsg='';hint.innerHTML='';
 // ---------- Zwei-Faktor-Anmeldung ----------
 // Supabase prüft den Code; die DB-Regeln sehen die erreichte Stufe im Token (aal1 / aal2).
 const factors=async()=>((await sb.auth.mfa.listFactors()).data?.totp||[]).filter(f=>f.status==='verified');
-const NEED_DB=26;   // bei jeder neuen Migration hier UND in der Migration hochzählen
+const NEED_DB=27;   // bei jeder neuen Migration hier UND in der Migration hochzählen
 let dbState={v:null,ok:true,missing:[]};
 async function checkDb(){
   // db_check() legt pruefen.sql an und nennt jede fehlende Datei einzeln – genauer als die Versionsnummer,
@@ -692,8 +710,12 @@ function pushHtml(sub){
     :'<div class="row between"><span class="small">📱 Push aufs Handy bei neuen Pinnwand-Beiträgen</span><button type="button" id="pushon">Einschalten</button></div>';
 }
 const NOTI={post:'📌 Neuer Pinnwand-Beitrag',event_new:'📅 Neuer Termin',invited:'🎯 Du bist angefragt',
-  entered:'✏️ Jemand hat dich eingetragen',changed:'🔄 Termin geändert oder abgesagt',reminder:'⏰ Erinnerung vor Anmeldeschluss'};
-const notiKinds=()=>Object.keys(NOTI).filter(k=>(k!=='post'||feat('board'))&&(k!=='invited'||feat('invites')));
+  entered:'✏️ Jemand hat dich eingetragen',changed:'🔄 Termin geändert oder abgesagt',
+  reminder:'⏰ Erinnerung vor Anmeldeschluss (ohne Antwort oder „Vielleicht")',reminder_start:'🔔 Erinnerung 24 h vor Beginn (bei Zusage)',
+  ride:'🚗 Mitfahrer steigt bei mir ein oder aus',reserved:'🎟 Mir wird ein Platz im Auto reserviert'};
+const NOTI27=['reminder_start','ride','reserved'];   // erst ab Migration 021 speicherbar
+const notiKinds=()=>Object.keys(NOTI).filter(k=>(k!=='post'||feat('board'))&&(k!=='invited'||feat('invites'))
+  &&(!NOTI27.includes(k)||brand.dbv>=27)&&(!['ride','reserved'].includes(k)||feat('rides')));
 const notiChans=()=>['mail','push'].filter(feat);
 async function accountDialog(){
   const psub=await pushSub();
@@ -864,7 +886,9 @@ function card(e){
 function viewEvent(id,forUser=me.id){
   const e=db.events.find(x=>x.id===id), t=typeOf(e), parts=db.parts[id]||{};
   const mgr=can('parts.manage'), locked=closed(e)&&!mgr;
-  const p=parts[forUser]||{status:'',ride:'self',seats:3,with:'',note:''};
+  const resv=db.resv.filter(r=>r.event_id===id), myRes=t.rides&&resv.find(r=>r.user_id===forUser);
+  let p=parts[forUser]||{status:'',ride:'self',seats:3,with:'',note:''};
+  if(myRes&&p.status!=='ja')p={...p,ride:'need',with:myRes.driver_id};   // reservierter Platz ist vorbelegt
   const noYes=full(e)&&p.status!=='ja'&&!mgr;   // wer schon zugesagt hat, bleibt drin
   const ok=u=>parts[u.id]?.status==='ja';
   const drivers=db.users.filter(u=>u.id!==forUser&&ok(u)&&parts[u.id].ride==='drive');
@@ -885,6 +909,18 @@ function viewEvent(id,forUser=me.id){
   const people=(can('view.yes')?group('ja','✅ Dabei'):'')+(can('view.maybe')?group('vielleicht','❔ Vielleicht'):'')+(can('view.no')?group('nein','❌ Abgesagt'):'')
     +(none.length?`<h4>⏳ Noch keine Antwort <span class="muted">(${none.length})</span></h4><p class="muted small">${none.map(u=>esc(u.name)).join(', ')}</p>`:'');
   const open=db.users.filter(u=>ok(u)&&parts[u.id].ride==='need'&&!parts[u.id].with);
+  // Fahrer reserviert Plätze – auch für Personen ohne Antwort; Server prüft Plätze und Rechte (check_reservation)
+  const drv=t.rides&&(forUser===me.id||mgr)&&parts[forUser]?.status==='ja'&&parts[forUser].ride==='drive';
+  const cand=db.users.filter(u=>{const x=parts[u.id];return u.id!==forUser&&!resv.some(r=>r.user_id===u.id)
+    &&(!x||x.status==='vielleicht'||(x.status==='ja'&&x.ride==='need'&&!x.with))});
+  const resBlock=drv?`<div class="card"><h3>🎟 Plätze reservieren</h3>
+    <p class="muted small" style="margin:0 0 6px">Auch für Personen, die noch nicht geantwortet haben. Sagen sie zu, fahren sie
+      ${forUser===me.id?'bei dir':'bei '+esc(userById(forUser)?.name)} mit; sagen sie ab, wird der Platz wieder frei.</p>
+    <ul class="people">${resv.filter(r=>r.driver_id===forUser).map(r=>`<li><b>${esc(userById(r.user_id)?.name||'?')}</b>
+      <button type="button" class="sec small" data-resdel="${esc(r.user_id)}" title="Reservierung zurücknehmen" aria-label="Reservierung zurücknehmen">✕</button></li>`).join('')}</ul>
+    ${free(parts,forUser,null,resv)<1?'<p class="muted small">Kein Platz mehr frei.</p>'
+      :cand.length?`<div class="row"><select id="resu" aria-label="Person" style="flex:1">${cand.map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}</select>
+        <button type="button" id="resadd">Reservieren</button></div>`:'<p class="muted small">Niemand mehr zur Auswahl.</p>'}</div>`:'';
   app.innerHTML=`<a href="#events" class="back">Alle Termine</a>
   <div class="card"><div class="row between">${badge(e)}${canEdit(e)?`<a class="btn sec" href="#edit/${esc(e.id)}">Bearbeiten</a>`:''}</div>
     <h2 style="margin-top:8px">${esc(e.title)}</h2>
@@ -898,20 +934,24 @@ function viewEvent(id,forUser=me.id){
     ${parts[forUser]?`<div>${byText(parts[forUser],forUser)}</div>`:''}
     ${locked?'<div class="notice">🔒 Anmeldeschluss vorbei – Änderungen nur noch über einen Organisator.</div>':''}
     ${noYes?'<div class="notice">🔒 Ausgebucht – keine weiteren Zusagen möglich.</div>':''}
+    ${myRes?`<div class="notice">🎟 ${esc(userById(myRes.driver_id)?.name||'Jemand')} hat ${forUser===me.id?'dir':'hier'} einen Platz im Auto reserviert${
+      p.status==='ja'?'':' – mit „Dabei" fährst du mit'}. ${forUser===me.id||mgr?'<button type="button" class="sec small" id="resno">Ablehnen</button>':''}</div>`:''}
     <fieldset ${locked?'disabled':''}>
       <fieldset><legend>Bist du dabei?</legend>${seg('status',{ja:'✅ Dabei',...(feat('maybe')||p.status==='vielleicht'?{vielleicht:'❔ Vielleicht'}:{}),nein:'❌ Nein'},p.status)}</fieldset>
       ${t.rides?`<fieldset data-ja><legend>Anreise</legend>${seg('ride',RIDE,p.ride)}</fieldset>
       <label data-drive>Freie Plätze (ohne Fahrer)<input type="number" name="seats" min="1" max="50" value="${p.seats||3}"></label>
-      <label data-need>Mitfahren bei<select name="with"><option value="">– noch offen –</option>${drivers.map(u=>{const f=free(parts,u.id,forUser);
+      <label data-need>Mitfahren bei<select name="with"><option value="">– noch offen –</option>${drivers.map(u=>{const f=free(parts,u.id,forUser,resv);
         return `<option value="${esc(u.id)}" ${p.with===u.id?'selected':''} ${f<1&&p.with!==u.id?'disabled':''}>${esc(u.name)} (${f} frei)</option>`}).join('')}</select></label>`:''}
       <label>Notiz<input name="note" maxlength="200" value="${esc(p.note)}" placeholder="optional"></label>
       <div style="margin-top:14px"><button>Speichern</button></div>
     </fieldset><p class="err" id="err"></p></form>
   <div>
-    ${invBlock}<div class="card"><h3>Teilnehmer</h3>${people||'<p class="muted">Keine Teilnehmer sichtbar.</p>'}</div>
+    ${resBlock}${invBlock}<div class="card"><h3>Teilnehmer</h3>${people||'<p class="muted">Keine Teilnehmer sichtbar.</p>'}</div>
     ${t.rides&&can('view.yes')?`<div class="card"><h3>Fahrgemeinschaften</h3>
       ${db.users.filter(u=>ok(u)&&parts[u.id].ride==='drive').map(u=>{const r=db.users.filter(x=>ok(x)&&parts[x.id].with===u.id);
-        return `<div class="item"><div><b>🚗 ${esc(u.name)}</b><div class="muted small">${r.map(x=>esc(x.name)).join(', ')||'noch niemand'}</div></div><span class="chip">${free(parts,u.id)} frei</span></div>`}).join('')||'<p class="muted">Noch keine Fahrer.</p>'}
+        const rs=resv.filter(x=>x.driver_id===u.id).map(x=>esc(userById(x.user_id)?.name||'?'));
+        return `<div class="item"><div><b>🚗 ${esc(u.name)}</b><div class="muted small">${r.map(x=>esc(x.name)).join(', ')||'noch niemand'}${
+          rs.length?' · 🎟 reserviert: '+rs.join(', '):''}</div></div><span class="chip">${free(parts,u.id,null,resv)} frei</span></div>`}).join('')||'<p class="muted">Noch keine Fahrer.</p>'}
       ${open.length?`<div class="notice">🙋 Suchen noch Mitfahrt: ${open.map(u=>esc(u.name)).join(', ')}</div>`:''}</div>`:''}
   </div></div>`;
   const f=$('#pf'), el=f.elements;
@@ -921,7 +961,12 @@ function viewEvent(id,forUser=me.id){
     f.querySelector('[data-need]').hidden=!(st==='ja'&&r==='need')};
   sync();
   f.onchange=ev=>ev.target.name==='for'?viewEvent(id,ev.target.value):sync();
-  f.onsubmit=ev=>{ev.preventDefault();saveParticipation(id,mgr?el.for.value:me.id,el,f.querySelector('button'))};
+  f.onsubmit=ev=>{ev.preventDefault();saveParticipation(id,mgr?el.for.value:me.id,el,f.querySelector('button:not([type=button])'))};
+  const resDo=async q=>{const {error}=await q; if(error)return showErr(error.message); await loadAll(); viewEvent(id,forUser)};
+  const resDel=uid=>resDo(sb.from('ride_reservations').delete().eq('event_id',id).eq('user_id',uid));
+  $('#resadd')?.addEventListener('click',()=>resDo(sb.from('ride_reservations').insert({event_id:id,driver_id:forUser,user_id:$('#resu').value})));
+  $('#resno')?.addEventListener('click',()=>resDel(forUser));
+  app.querySelectorAll('[data-resdel]').forEach(b=>b.onclick=()=>resDel(b.dataset.resdel));
 }
 async function saveParticipation(evId,userId,el,btn){
   btn.disabled=true;
@@ -1558,8 +1603,24 @@ async function pickImage(f,name,maxKB,current){
   if(up.error)return {err:up.error.message};
   return {url:sb.storage.from('branding').getPublicUrl(path).data.publicUrl};
 }
+// App-Symbol fürs Manifest: PNG 512 × 512, Logo mittig auf Weiß und 60 % groß – so bleibt es in der runden
+// Schutzzone, die Android ausschneidet ("maskable"). null, wenn der Browser das Bild nicht zeichnen kann.
+async function makeIcon(file){
+  let img;
+  try{img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(file)})}
+  catch(e){return null}
+  const w=img.naturalWidth, h=img.naturalHeight, c=document.createElement('canvas'), x=c.getContext('2d');
+  if(!w||!h){URL.revokeObjectURL(img.src);return null}   // z. B. SVG ohne Größenangabe
+  c.width=c.height=512; x.fillStyle='#fff'; x.fillRect(0,0,512,512);
+  const k=307/Math.max(w,h); x.drawImage(img,(512-w*k)/2,(512-h*k)/2,w*k,h*k);
+  URL.revokeObjectURL(img.src);
+  return new Promise(res=>c.toBlob(res,'image/png'));
+}
+// „↺ Standard": setzt nur das Formular zurück, gespeichert wird wie sonst mit „Speichern"
+const rs=(k,t='↺ Standard')=>`<button type="button" class="sec small reset" data-reset="${k}">${t}</button>`;
 function tabSettings(){
-  const sws=area=>AREA_FEAT[area].map(k=>sw('feat',k,FEATURES[k],feat(k))).join('');
+  const sws=area=>AREA_FEAT[area].map(k=>sw('feat',k,FEATURES[k],feat(k))).join('')
+    +(AREA_FEAT[area].length?`<div>${rs('feat','↺ Schalter auf Standard (alle an)')}</div>`:'');
   // section statt fieldset: eine legend sitzt sonst auf dem Kartenrahmen
   const sec=(area,title,body)=>can(area)?`<section class="card" style="margin:0 0 14px"><h3>${title}</h3>${body}</section>`:'';
   return {html:`<form id="sf" class="narrow" style="margin:0">
@@ -1567,27 +1628,30 @@ function tabSettings(){
       Du siehst nur die Bereiche, für die deine Rolle das Recht hat.</p>
     ${sec('settings.look','🎨 Aussehen',`
     <p class="muted small">Gilt für alle – im Kopf, im Browser-Tab und auf der Login-Seite.</p>
-    <label>Name<input name="name" required maxlength="40" value="${esc(brand.name)}"></label>
-    <label>Logo (PNG/JPG/SVG, max. 400 KB)<input type="file" name="logo" accept="image/*"></label>
+    <label>Name<input name="name" required maxlength="40" value="${esc(brand.name)}"></label>${rs('name')}
+    <label>Logo (PNG/JPG/SVG, max. 400 KB)<input type="file" name="logo" accept="image/*"></label>${rs('logo')}
+    <p class="muted small" style="margin:6px 0 0">Name und Logo sind auch Name und Symbol der App auf dem Handy (aus dem Logo
+      entsteht ein quadratisches Symbol). Schon installierte Apps: Android übernimmt es nach einiger Zeit, teils erst nach
+      Bestätigung im App-Menü; auf dem iPhone die App entfernen und neu zum Home-Bildschirm hinzufügen.</p>
     ${brand.logo_url?`<div class="row" style="margin-top:10px"><img src="${esc(brand.logo_url)}" alt="" style="max-height:60px;border-radius:8px">
       <label class="check"><input type="checkbox" name="logo_rm"> Logo entfernen</label></div>`:''}
-    <label>Hintergrundbild (optional, max. 1,5 MB)<input type="file" name="bg" accept="image/*"></label>
+    <label>Hintergrundbild (optional, max. 1,5 MB)<input type="file" name="bg" accept="image/*"></label>${rs('bg')}
     <p class="muted small" style="margin:6px 0 0">Liegt hinter einem Schleier, damit Texte lesbar bleiben. Wirkt mit jeder Vorlage.</p>
     ${brand.bg_url?`<div class="row" style="margin-top:10px"><img src="${esc(brand.bg_url)}" alt="" style="max-height:70px;border-radius:8px">
       <label class="check"><input type="checkbox" name="bg_rm"> Hintergrundbild entfernen</label></div>`:''}
     <fieldset><legend>Erscheinungsbild (für alle)</legend>
       <div class="seg">${Object.entries(THEMES).map(([k,v])=>
-        `<label><input type="radio" name="theme" value="${k}" ${(brand.theme||'glass')===k?'checked':''}>${v}</label>`).join('')}</div></fieldset>
-    <div class="row"><label style="flex:0 0 110px;min-width:0">Akzentfarbe<input type="color" name="accent" value="${esc(brand.accent||'#4f46e5')}"></label>
+        `<label><input type="radio" name="theme" value="${k}" ${(brand.theme||'glass')===k?'checked':''}>${v}</label>`).join('')}</div>${rs('theme')}</fieldset>
+    <div class="row"><label style="flex:0 0 110px;min-width:0">Akzentfarbe<input type="color" name="accent" value="${esc(brand.accent||'#4f46e5')}"></label>${rs('accent')}
       <p class="muted small" style="flex:1;min-width:160px;margin:0">Hell/Dunkel stellt jede Person selbst oben in der Kopfzeile ein.</p></div>`)}
     ${sec('settings.events','📅 Termine',`${sws('settings.events')}
       <p class="muted small" style="margin:4px 0 0">Fahrgemeinschaften lassen sich zusätzlich je Termin-Art abschalten (Reiter „Termin-Arten").</p>
-      <label>Automatisch ins Archiv, Tage nach dem Datum<input type="number" name="ae" min="1" max="3650" value="${brand.archive_events_days??''}" placeholder="leer = nie, z. B. 30"></label>`)}
+      <label>Automatisch ins Archiv, Tage nach dem Datum<input type="number" name="ae" min="1" max="3650" value="${brand.archive_events_days??''}" placeholder="leer = nie, z. B. 30"></label>${rs('ae')}`)}
     ${sec('settings.board','📌 Pinnwand',`${sws('settings.board')}
-      <label>Automatisch ins Archiv, Tage nach dem Erstellen<input type="number" name="ap" min="1" max="3650" value="${brand.archive_posts_days??''}" placeholder="leer = nie, z. B. 90"></label>
+      <label>Automatisch ins Archiv, Tage nach dem Erstellen<input type="number" name="ap" min="1" max="3650" value="${brand.archive_posts_days??''}" placeholder="leer = nie, z. B. 90"></label>${rs('ap')}
       <p class="muted small" style="margin:4px 0 0">Nichts wird gelöscht – Archiviertes bleibt unter „📦 Archiv" einsehbar.</p>`)}
     ${sec('settings.ideas','💡 Vorschläge',`${sws('settings.ideas')}
-      ${sw('rao','1','Antworten dürfen ohne Namen gegeben werden',brand.reply_anon_allowed!==false)}
+      ${sw('rao','1','Antworten dürfen ohne Namen gegeben werden',brand.reply_anon_allowed!==false)}${rs('rao')}
       <p class="muted small" style="margin:4px 0 0">Betrifft nur die <b>Antwort</b> der Zuständigen.
         Vorschläge selbst bleiben immer anonym einreichbar.</p>`)}
     ${sec('settings.notify','🔔 Benachrichtigungen',`${sws('settings.notify')}
@@ -1613,13 +1677,21 @@ function tabSettings(){
                                :'📱 Push noch nicht eingerichtet – Schritte am Ende von <code>migrations/015_v21.sql</code>.')
           : '📱 Push: <code>migrations/015_v21.sql</code> fehlt noch.');
     })();
+    f.onclick=ev=>{const b=ev.target.closest('[data-reset]'); if(!b)return;
+      const el=f.elements, k=b.dataset.reset, D=BRAND_DEF;
+      if(k==='feat')b.closest('section').querySelectorAll('[name=feat]').forEach(x=>x.checked=true);
+      else if(k==='logo'||k==='bg'){el[k].value=''; if(el[k+'_rm'])el[k+'_rm'].checked=true}
+      else if(k==='rao')el.rao.checked=D.reply_anon_allowed;
+      else if(k==='ae'||k==='ap')el[k].value='';
+      else{el[k].value=D[k]; f.onchange({target:{name:k,value:D[k]}})}   // name, theme, accent (+ Vorschau)
+      $('#serr').textContent='Zurückgesetzt – gilt mit „Speichern".';$('#serr').className='muted small'};
     f.onchange=ev=>{  // Vorschau, gilt erst mit "Speichern" für alle
       if(ev.target.name==='theme')document.documentElement.dataset.theme=ev.target.value;
       if(ev.target.name==='accent'){document.documentElement.style.setProperty('--acc',ev.target.value);
         document.documentElement.style.setProperty('--acc-fg',fgFor(ev.target.value))}};
     f.onsubmit=async ev=>{ev.preventDefault();
       const fd=new FormData(f);
-      const b=f.querySelector('button');b.disabled=true;
+      const b=f.querySelector('button:not([type=button])');b.disabled=true;
       const err=t=>{$('#serr').textContent=de(t);$('#serr').className='err';b.disabled=false};
       try{
         // nur senden, was zu den eigenen Bereichen gehört – den Rest prüft guard_settings() ohnehin
@@ -1627,6 +1699,15 @@ function tabSettings(){
         if(can('settings.look')){
           const L=await pickImage(f,'logo',400,brand.logo_url); if(L.err)return err(L.err);
           const B=await pickImage(f,'bg',1500,brand.bg_url);    if(B.err)return err(B.err);
+          if('icon_url' in brand){   // Spalte ab Migration 021; neues Logo → neues App-Symbol, ohne Logo Standard-Symbol
+            let icon=brand.icon_url;
+            if(L.url!==brand.logo_url){icon=null;
+              const bl=L.url&&await makeIcon(f.elements.logo.files[0]);
+              if(bl){const path=`icon-${Date.now()}.png`, up=await sb.storage.from('branding').upload(path,bl,{contentType:'image/png'});
+                if(up.error)return err(up.error.message);
+                icon=sb.storage.from('branding').getPublicUrl(path).data.publicUrl}}
+            row.icon_url=icon;
+          }
           Object.assign(row,{name:f.elements.name.value.trim(),logo_url:L.url,bg_url:B.url,
             theme:f.elements.theme.value,accent:f.elements.accent.value});
         }
@@ -1748,7 +1829,8 @@ function tabTypes(){
 // ---------- Log ----------
 const TBL={events:'Termin',parts:'Teilnahme',profiles:'Benutzer',roles:'Rolle',event_types:'Termin-Art',
   posts:'Beitrag',polls:'Umfrage',poll_options:'Umfrage-Option',groups:'Gruppe',group_members:'Gruppen-Mitglied',
-  post_targets:'Zielgruppe',media:'Bild',app_settings:'Einstellungen',event_invites:'Anfrage',backup:'Backup',profile_roles:'Rollen-Zuordnung'};
+  post_targets:'Zielgruppe',media:'Bild',app_settings:'Einstellungen',event_invites:'Anfrage',backup:'Backup',profile_roles:'Rollen-Zuordnung',
+  ride_reservations:'Platzreservierung'};
 const OPS={INSERT:'erstellt',UPDATE:'geändert',DELETE:'gelöscht',EXPORT:'heruntergeladen',IMPORT:'eingespielt'};
 const FIELDS={title:'Titel',type_id:'Art',date:'Datum',time:'Uhrzeit',deadline:'Anmeldeschluss',max_parts:'Max. Teilnehmer',location:'Ort',descr:'Beschreibung',status:'Status',ride:'Anreise',seats:'Plätze',
   with_id:'Fährt mit',note:'Notiz',name:'Name',role_id:'Rolle',is_owner:'Besitzer',perms:'Rechte',color:'Farbe',rides:'Fahrgemeinschaften',
@@ -1757,12 +1839,13 @@ const FIELDS={title:'Titel',type_id:'Art',date:'Datum',time:'Uhrzeit',deadline:'
   archive_events_days:'Termine automatisch archivieren (Tage)',archive_posts_days:'Beiträge automatisch archivieren (Tage)',
   label:'Antwort',at:'Termin-Vorschlag',pos:'Reihenfolge',group_id:'Gruppe',user_id:'Person',post_id:'Beitrag',
   url:'Datei',mfa_required:'Zwei-Faktor-Pflicht',first_name:'Vorname',last_name:'Nachname',nick:'Spitzname',
-  features:'Schalter',reply_anon_allowed:'Anonyme Antworten erlaubt',exclude:'Ausgenommen',approvable:'Von Freigebern vergebbar'};
+  features:'Schalter',reply_anon_allowed:'Anonyme Antworten erlaubt',exclude:'Ausgenommen',approvable:'Von Freigebern vergebbar',
+  driver_id:'Fahrer',icon_url:'App-Symbol'};
 function val(k,v){
   if(v==null||v==='')return '–';
   if(k==='role_id')return roleById(v)?.name||'(gelöschte Rolle)';
   if(k==='type_id')return db.types.find(t=>t.id===v)?.name||'(gelöschte Art)';
-  if(k==='with_id')return fullName(userById(v));
+  if(k==='with_id'||k==='driver_id')return fullName(userById(v));
   if(k==='status')return STATUS[v]||v;
   if(k==='ride')return RIDE[v]||v;
   if(k==='deadline'||k==='closes_at'||k==='at'||k==='archived_at')return fmtDT(v);
