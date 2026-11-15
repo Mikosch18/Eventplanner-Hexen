@@ -1,0 +1,1822 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Eventplaner</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script>
+// Modus/Theme sofort setzen (vor dem ersten Zeichnen), Werte aus dem letzten Besuch
+(function(){try{
+  var d=document.documentElement, m=localStorage.getItem('mode')||'auto';
+  d.dataset.mode=m==='auto'?(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'):m;
+  d.dataset.theme=localStorage.getItem('myTheme')||localStorage.getItem('theme')||'glass';
+  var a=localStorage.getItem('myAccent')||localStorage.getItem('accent'); if(a)d.style.setProperty('--acc',a);
+  var f=localStorage.getItem('accentFg'); if(f)d.style.setProperty('--acc-fg',f);
+  var g=localStorage.getItem('bg');
+  if(g&&/^https:\/\/[^"'()\s\\]+$/.test(g)){d.style.setProperty('--bgimg','url("'+g+'")');
+    d.style.setProperty('--bgveil','linear-gradient(color-mix(in srgb,var(--bg) 62%,transparent),color-mix(in srgb,var(--bg) 62%,transparent))')}
+}catch(e){}})();
+</script>
+<style>
+/* ---- Design-Token: Modus (hell/dunkel) × Theme (glass/neon/plain) ---------
+   data-mode + data-theme stehen am <html>; gesetzt wird beides sehr früh im <head>,
+   damit beim Laden nichts aufblitzt. Akzentfarbe kommt aus app_settings. ---- */
+:root{
+  --acc:#4f46e5; --acc-fg:#fff;
+  --acc2:color-mix(in srgb,var(--acc) 45%,#22d3ee);
+  --acc-soft:color-mix(in srgb,var(--acc) 14%,transparent);
+  --r:18px; --r-sm:12px;
+  --glassf:none; --page:none; --ring:none;
+  color-scheme:light;
+  --bg:#f1f3f8; --fg:#13161d; --muted:#606878; --card:#fff; --line:#e3e7ef; --field:#f6f7fb;
+  --warn:#b45309; --ok:#15803d; --danger:#dc2626;
+  --shadow:0 1px 2px rgb(16 20 30/.05),0 8px 26px rgb(16 20 30/.06);
+}
+:root[data-mode=dark]{
+  color-scheme:dark;
+  --bg:#0a0c11; --fg:#e8ebf2; --muted:#98a1b2; --card:#151922; --line:#262c38; --field:#1b2029;
+  --warn:#f59e0b; --ok:#34d399; --danger:#f87171;
+  --shadow:0 1px 2px rgb(0 0 0/.5),0 12px 34px rgb(0 0 0/.4);
+}
+/* Glas: durchscheinende Flächen über farbigem Grund */
+:root[data-theme=glass]{
+  --glassf:blur(22px) saturate(165%);
+  --card:color-mix(in srgb,#fff 56%,transparent); --line:color-mix(in srgb,#0a0c11 9%,transparent);
+  --field:color-mix(in srgb,#fff 55%,transparent);
+  --page:radial-gradient(760px 560px at 10% -8%,color-mix(in srgb,var(--acc) 30%,transparent),transparent 68%),
+         radial-gradient(680px 520px at 97% 4%,color-mix(in srgb,var(--acc2) 26%,transparent),transparent 66%),
+         radial-gradient(900px 700px at 50% 110%,color-mix(in srgb,var(--acc) 14%,transparent),transparent 70%);
+}
+:root[data-theme=glass][data-mode=dark]{
+  --card:color-mix(in srgb,#1a1f2b 52%,transparent); --line:color-mix(in srgb,#fff 11%,transparent);
+  --field:color-mix(in srgb,#fff 7%,transparent);
+  --page:radial-gradient(760px 560px at 10% -8%,color-mix(in srgb,var(--acc) 34%,transparent),transparent 66%),
+         radial-gradient(680px 520px at 97% 4%,color-mix(in srgb,var(--acc2) 26%,transparent),transparent 64%),
+         radial-gradient(900px 700px at 50% 110%,color-mix(in srgb,var(--acc) 16%,transparent),transparent 70%);
+}
+/* Aurora: wie Glas, aber mit kräftigem Mehrfarb-Verlauf */
+:root[data-theme=aurora]{
+  --glassf:blur(26px) saturate(185%);
+  --card:color-mix(in srgb,#fff 58%,transparent); --line:color-mix(in srgb,#0a0c11 8%,transparent);
+  --field:color-mix(in srgb,#fff 56%,transparent);
+  --page:radial-gradient(900px 620px at 0% -5%,color-mix(in srgb,var(--acc) 50%,transparent),transparent 62%),
+         radial-gradient(760px 600px at 100% 8%,color-mix(in srgb,#f472b6 46%,transparent),transparent 62%),
+         radial-gradient(940px 720px at 38% 108%,color-mix(in srgb,#22d3ee 44%,transparent),transparent 64%);
+}
+:root[data-theme=aurora][data-mode=dark]{
+  --bg:#06080f; --card:color-mix(in srgb,#141a26 52%,transparent); --line:color-mix(in srgb,#fff 12%,transparent);
+  --field:color-mix(in srgb,#fff 8%,transparent);
+}
+/* Monochrom: nüchtern, kantig, ohne Verlauf und Schatten */
+:root[data-theme=mono]{
+  --r:8px; --r-sm:6px; --shadow:none; --page:none; --glassf:none;
+  --line:color-mix(in srgb,var(--fg) 22%,transparent); --field:transparent;
+  --bg:#fff; --card:#fff;
+}
+:root[data-theme=mono][data-mode=dark]{--bg:#0b0d12; --card:#0b0d12}
+:root[data-theme=mono] .card:hover{border-color:var(--fg)}
+
+/* Neon: dunkler Grund, leuchtende Kanten */
+:root[data-theme=neon]{
+  --glassf:blur(16px) saturate(150%);
+  --line:color-mix(in srgb,var(--acc) 26%,transparent);
+  --ring:0 0 0 1px color-mix(in srgb,var(--acc) 32%,transparent),0 0 26px color-mix(in srgb,var(--acc) 20%,transparent);
+  --shadow:var(--ring);
+  --card:color-mix(in srgb,#fff 70%,transparent); --field:color-mix(in srgb,#fff 60%,transparent);
+  --page:radial-gradient(700px 480px at 50% -12%,color-mix(in srgb,var(--acc) 26%,transparent),transparent 70%);
+}
+:root[data-theme=neon][data-mode=dark]{
+  --bg:#05060b; --card:color-mix(in srgb,#0c1019 74%,transparent); --field:color-mix(in srgb,var(--acc) 7%,transparent);
+  --page:radial-gradient(700px 480px at 50% -12%,color-mix(in srgb,var(--acc) 34%,transparent),transparent 70%),
+         radial-gradient(600px 420px at 90% 100%,color-mix(in srgb,var(--acc2) 20%,transparent),transparent 70%);
+}
+:root[data-theme=neon] .card:hover{box-shadow:0 0 0 1px color-mix(in srgb,var(--acc) 50%,transparent),0 0 36px color-mix(in srgb,var(--acc) 30%,transparent)}
+:root[data-theme=neon] button:not(.sec):not(.link){box-shadow:0 0 20px color-mix(in srgb,var(--acc) 45%,transparent)}
+:root[data-theme=neon] h2,:root[data-theme=neon] .brand{text-shadow:0 0 22px color-mix(in srgb,var(--acc) 45%,transparent)}
+
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg);
+  -webkit-font-smoothing:antialiased;min-height:100vh}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:var(--bgveil,none),var(--page),var(--bgimg,none);
+  background-size:auto,auto,cover;background-position:center;background-repeat:no-repeat}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--card) 86%,transparent);
+  backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border-bottom:1px solid var(--line)}
+.hbar{max-width:1060px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.brand{font-weight:750;font-size:18px;text-decoration:none;color:inherit;margin-right:auto;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+nav.main{display:flex;gap:3px;flex-wrap:wrap;order:3;width:100%}
+@media (min-width:760px){nav.main{order:0;width:auto}}
+nav.main a,.subnav a{padding:7px 14px;border-radius:999px;text-decoration:none;color:var(--muted);font-weight:550;font-size:14px;transition:background .15s,color .15s}
+nav.main a:hover,.subnav a:hover{color:var(--fg);background:color-mix(in srgb,var(--fg) 6%,transparent)}
+nav.main a.on,.subnav a.on{background:var(--acc-soft);color:color-mix(in srgb,var(--acc) 80%,var(--fg))}
+.who{display:flex;gap:8px;align-items:center;font-size:14px}
+.hintbar{max-width:1060px;margin:14px auto -4px;padding:0 16px}
+.hintbar .notice{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.hintbar .notice>span{flex:1;min-width:200px}
+#mode{background:none;border:1px solid var(--line);color:var(--fg);padding:4px 11px;font-size:19px;line-height:1.25;box-shadow:none}
+#mode:hover{background:color-mix(in srgb,var(--fg) 6%,transparent)}
+@media (max-width:759px){
+  .who .badge{display:none}                 /* Kopf auf dem Handy kurz halten */
+  nav.main a{padding:6px 11px;font-size:13.5px}
+  .hbar{padding:9px 14px;gap:8px}
+}
+main{max-width:1060px;margin:0 auto;padding:22px 16px 72px}
+
+h2{font-size:23px;margin:0;letter-spacing:-.025em}h3{margin:.2em 0 .3em;font-size:17px;letter-spacing:-.015em}h4{margin:16px 0 6px;font-size:14px}
+.card{display:block;background:var(--card);backdrop-filter:var(--glassf);-webkit-backdrop-filter:var(--glassf);
+  border:1px solid var(--line);border-radius:var(--r);padding:18px;margin:0 0 14px;color:inherit;text-decoration:none;box-shadow:var(--shadow)}
+a.card{transition:transform .15s cubic-bezier(.2,.8,.2,1),border-color .15s,box-shadow .15s}
+a.card:hover{border-color:color-mix(in srgb,var(--acc) 45%,var(--line));transform:translateY(-3px)}
+.narrow{max-width:470px;margin-inline:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}.grid>.card{margin:0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.between{justify-content:space-between}.end{justify-content:flex-end}.row>label{flex:1;min-width:150px}
+.head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.muted{color:var(--muted)}.small{font-size:13px}.warn{color:var(--warn)}.err{color:var(--danger);min-height:1.2em;margin:6px 0 0}.ok{color:var(--ok)}
+.past{opacity:.55}
+.badge{display:inline-block;font-size:12px;font-weight:650;padding:3px 11px;border-radius:999px;
+  background:color-mix(in srgb,var(--c,#6b7280) 18%,transparent);color:color-mix(in srgb,var(--c,#6b7280) 72%,var(--fg))}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{font-size:12.5px;padding:4px 10px;border-radius:999px;background:color-mix(in srgb,var(--fg) 5%,transparent);border:1px solid var(--line)}
+.chip.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
+.chip.danger{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,transparent)}
+.me{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:14px}.me.open{color:var(--warn);font-weight:600}
+.by{font-size:12px;color:var(--muted)}
+label{display:block;margin:12px 0 0;font-size:13px;font-weight:600;color:var(--muted)}
+input,select,textarea{display:block;width:100%;margin-top:6px;padding:10px 12px;font:inherit;color:var(--fg);background:var(--field);
+  border:1px solid var(--line);border-radius:var(--r-sm);transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
+input[type=color]{padding:3px;height:42px}
+input[type=radio],input[type=checkbox]:not([role=switch]){accent-color:var(--acc)}
+select option,select optgroup{background:var(--bg);color:var(--fg)}
+input[type=file]{padding:8px 12px}
+button,.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border:0;border-radius:var(--r-sm);background:var(--acc);color:var(--acc-fg);
+  font:inherit;font-weight:650;cursor:pointer;text-decoration:none;transition:filter .15s,transform .1s}
+button:hover,.btn:hover{filter:brightness(1.08)}button:active,.btn:active{transform:scale(.97)}
+button:disabled{opacity:.5;cursor:default;filter:none}
+.sec{background:color-mix(in srgb,var(--fg) 6%,transparent);color:var(--fg);border:1px solid var(--line)}
+.danger{background:var(--danger);color:#fff}
+.link{background:none;border:0;color:var(--acc);padding:0;font-weight:550;box-shadow:none!important}
+fieldset{border:0;padding:0;margin:14px 0 0;min-width:0}legend{font-size:13px;font-weight:600;color:var(--muted);padding:0}
+.seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.seg label{margin:0;flex:none;min-width:0;padding:7px 14px;border:1px solid var(--line);border-radius:999px;cursor:pointer;
+  color:var(--fg);font-weight:550;font-size:14px;background:var(--field);transition:background .15s,border-color .15s,color .15s}
+.seg label:hover{border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg label:has(input:checked){background:var(--acc);border-color:var(--acc);color:var(--acc-fg)}
+/* Mehrfach-Filter: angewählt = dezent an, abgewählt = sichtbar aus */
+.seg.multi label{opacity:.45;text-decoration:line-through;text-decoration-thickness:1px}
+.seg.multi label:has(input:checked){opacity:1;text-decoration:none;background:var(--acc-soft);
+  border-color:color-mix(in srgb,var(--acc) 55%,transparent);color:color-mix(in srgb,var(--acc) 80%,var(--fg))}
+.seg label:has(input:focus-visible){outline:2px solid var(--acc);outline-offset:2px}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;padding:16px}.filters label{margin:0}
+.filters fieldset{margin:0;grid-column:1/-1}
+.people{list-style:none;margin:0;padding:0}.people li{padding:8px 0;border-bottom:1px solid var(--line)}.people li:last-child{border:0}
+.notice{padding:11px 13px;border-radius:var(--r-sm);background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn);font-size:14px;margin-top:10px}
+.item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}.item:last-child{border:0}
+.dot{display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--c);margin-right:8px;vertical-align:middle}
+.subnav{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px}
+details.menu{position:relative}
+details.menu summary{list-style:none;cursor:pointer;padding:2px 10px;border-radius:10px;font-size:22px;line-height:1.2;color:var(--muted)}
+details.menu summary::-webkit-details-marker{display:none}details.menu summary:hover,details.menu[open] summary{background:color-mix(in srgb,var(--fg) 7%,transparent)}
+details.menu>div{position:absolute;right:0;top:calc(100% + 6px);background:var(--card);backdrop-filter:blur(18px) saturate(160%);
+  -webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 10px 40px rgb(0 0 0/.18);padding:5px;z-index:10;min-width:180px;display:flex;flex-direction:column}
+details.menu>div button{background:none;color:var(--fg);justify-content:flex-start;padding:9px 11px;border-radius:9px;font-weight:500;box-shadow:none}
+details.menu>div button:hover{background:color-mix(in srgb,var(--fg) 8%,transparent);filter:none}
+details.menu .del{color:var(--danger)}
+dialog{border:1px solid var(--line);border-radius:var(--r);padding:22px;width:min(480px,calc(100vw - 32px));max-height:88vh;overflow:auto;
+  background:var(--card);backdrop-filter:blur(26px) saturate(170%);-webkit-backdrop-filter:blur(26px) saturate(170%);
+  color:var(--fg);box-shadow:0 24px 70px rgb(0 0 0/.3)}
+dialog::backdrop{background:rgb(8 10 18/.5);backdrop-filter:blur(3px)}
+.sw{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0;padding:10px 0;border-bottom:1px solid var(--line);
+  color:var(--fg);font-weight:400;font-size:14px}
+input[type=checkbox][role=switch]{appearance:none;-webkit-appearance:none;width:44px;height:26px;border-radius:999px;background:color-mix(in srgb,var(--fg) 18%,transparent);
+  position:relative;cursor:pointer;flex:none;margin:0;padding:0;border:0;transition:background .18s;box-shadow:none}
+input[type=checkbox][role=switch]::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;
+  transition:transform .18s cubic-bezier(.2,.8,.2,1);box-shadow:0 1px 4px rgb(0 0 0/.35)}
+input[type=checkbox][role=switch]:checked{background:var(--acc)}
+input[type=checkbox][role=switch]:checked::after{transform:translateX(18px)}
+input[type=checkbox][role=switch]:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:12px;color:var(--muted);font-weight:650;text-transform:uppercase;letter-spacing:.04em}
+td select{margin:0;min-width:140px}
+.desc{white-space:pre-wrap;margin:12px 0 0}
+.check{display:flex;gap:8px;align-items:center;margin:0}.check input{width:auto;margin:0}
+.nbadge{display:inline-block;min-width:18px;text-align:center;background:var(--danger);color:#fff;border-radius:999px;padding:0 5px;font-size:11px;font-weight:700;vertical-align:1px}
+.logo{height:26px;width:auto;max-width:120px;border-radius:7px;object-fit:contain}
+.post{border-left:3px solid transparent}.post.unread{border-left-color:var(--acc)}
+.fresh{border-left:3px solid var(--acc)}
+.bar{position:relative;background:color-mix(in srgb,var(--fg) 5%,transparent);border:1px solid var(--line);border-radius:10px;padding:8px 11px;margin-top:6px;overflow:hidden}
+.bar>i{position:absolute;inset:0 auto 0 0;background:var(--acc-soft);z-index:0;transition:width .3s cubic-bezier(.2,.8,.2,1)}
+.bar>span{position:relative;z-index:1;display:flex;justify-content:space-between;gap:10px}
+.rx{display:flex;gap:5px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.rx button{background:var(--field);color:var(--fg);border:1px solid var(--line);padding:4px 10px;font-size:14px;border-radius:999px;font-weight:500;box-shadow:none}
+.rx button.on{background:var(--acc-soft);border-color:var(--acc);color:color-mix(in srgb,var(--acc) 80%,var(--fg))}
+.pickers{max-height:190px;overflow:auto;border:1px solid var(--line);border-radius:var(--r-sm);padding:4px 11px;margin-top:6px;background:var(--field)}
+.cnt{font-size:13px;color:var(--muted);margin:0 0 10px}
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:12px}
+.gal a,.gal figure{position:relative;margin:0;aspect-ratio:4/3;border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--line);display:block;cursor:pointer}
+.gal img{width:100%;height:100%;object-fit:cover;display:block;margin:0}
+.gal button{position:absolute;top:4px;right:4px;padding:2px 8px;font-size:13px;border-radius:999px;background:rgb(0 0 0/.6);color:#fff;box-shadow:none}
+#lb{max-width:min(96vw,1200px);width:auto;padding:0;border:0;background:transparent;box-shadow:none}
+#lb img{display:block;max-width:100%;max-height:88vh;border-radius:var(--r)}
+#lb form{position:absolute;top:10px;right:10px}
+.back{display:inline-flex;align-items:center;gap:7px;padding:7px 15px 7px 12px;margin-bottom:14px;border-radius:999px;
+  border:1px solid var(--line);background:var(--card);backdrop-filter:var(--glassf);-webkit-backdrop-filter:var(--glassf);
+  color:var(--muted);text-decoration:none;font-size:13.5px;font-weight:600;transition:color .15s,border-color .15s,transform .15s}
+.back::before{content:"←";font-size:16px;line-height:1}
+.back:hover{color:var(--fg);border-color:color-mix(in srgb,var(--acc) 50%,var(--line));transform:translateX(-2px)}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+</head>
+<body>
+<header><div class="hbar"><a class="brand" href="#board">🎉 Eventplaner</a><nav class="main" id="nav"></nav><button id="mode" type="button" title="Hell / Dunkel / Automatisch"></button><div id="who" class="who"></div></div></header>
+<div id="hint"></div><main id="app"></main>
+<dialog id="dlg"></dialog>
+<script>
+// ==== KONFIGURATION (öffentliche Werte – Schutz läuft über RLS in schema.sql/migrations) ====
+const SUPABASE_URL='https://xcioxzgcanjlphdalnfb.supabase.co';
+const SUPABASE_KEY='sb_publishable_P5bkr5Ay9--tGEUNlcyGZg_OGbl6SEa';
+// ==========================================================================================
+const STATUS={ja:'✅ Dabei',vielleicht:'❔ Vielleicht',nein:'❌ Abgesagt'};
+const RIDE={self:'Eigene Anreise',drive:'Ich fahre & nehme mit',need:'Brauche Mitfahrt'};
+const PERM_GROUPS=[
+  ['Termine',{'events.create':'Termine erstellen (eigene bearbeiten)','events.edit':'Alle Termine bearbeiten & löschen'}],
+  ['Teilnahmen sehen',{'view.yes':'Zusagen sehen','view.maybe':'„Vielleicht“ sehen','view.no':'Absagen sehen'}],
+  ['Teilnahmen',{'parts.manage':'Für andere eintragen (auch nach Anmeldeschluss)'}],
+  ['Pinnwand',{'posts.create':'Beiträge schreiben','polls.create':'Umfragen erstellen','reads.view':'Sehen, wer einen Beitrag gelesen hat'}],
+  ['Vorschläge',{'ideas.manage':'Vorschläge bearbeiten (Stand setzen, antworten)'}],
+  ['Verwaltung',{'users.approve':'Registrierungen freigeben','users.manage':'Benutzer & Rollen verwalten (≈ Admin)',
+    'groups.manage':'Gruppen verwalten','log.view':'Log ansehen'}],
+  ['Backup',{'backup.export':'Backup herunterladen (enthält auch anonyme Stimmen und Einreicher)',
+    'backup.import':'Backup einspielen (überschreibt alles, auch Rollen und Rechte ≈ volle Kontrolle)'}],
+  ['Einstellungen',{'settings.look':'Aussehen','settings.events':'Termine & Termin-Arten','settings.board':'Pinnwand',
+    'settings.ideas':'Vorschläge','settings.notify':'Benachrichtigungen','settings.access':'Zugang & Namen'}]];
+const SET_PERMS=Object.keys(PERM_GROUPS[PERM_GROUPS.length-1][1]);
+const PERMS=Object.assign({},...PERM_GROUPS.map(g=>g[1]));
+const DE={'Invalid login credentials':'E-Mail oder Passwort falsch.',
+  'Email not confirmed':'E-Mail noch nicht bestätigt – bitte den Link in der Bestätigungs-Mail anklicken.',
+  'User already registered':'Diese E-Mail ist schon registriert.',
+  'email rate limit exceeded':'Supabase-Mail-Limit erreicht – später nochmal versuchen.'};
+const de=m=>DE[m]||(/duplicate key/.test(m)?'Der Name ist schon vergeben.':m);
+const $=s=>document.querySelector(s), app=$('#app'), who=$('#who'), dlg=$('#dlg'), hint=$('#hint');
+const hits=(text,q)=>{const t=String(text).toLowerCase();
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every(w=>t.includes(w))};
+{const T='Grillfest im Sommer am See';
+ console.assert(hits(T,'grill see')&&hits(T,'')&&!hits(T,'grill winter'),'Selbsttest hits() fehlgeschlagen')}
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const showErr=(m,ok)=>{const e=$('#err');if(!e)return alert(de(m));e.textContent=de(m);e.className=ok?'ok':'err'};
+const here=()=>location.origin+location.pathname;
+const today=()=>new Date().toLocaleDateString('sv');
+const fmt=e=>new Date(e.date+'T'+(e.time||'00:00')).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})+(e.time?', '+e.time+' Uhr':'');
+const fmtDT=d=>new Date(d).toLocaleString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' Uhr';
+const toLocalInput=d=>{const x=new Date(d);x.setMinutes(x.getMinutes()-x.getTimezoneOffset());return x.toISOString().slice(0,16)};
+const opts=(o,sel)=>Object.entries(o).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${v}</option>`).join('');
+let sb=null, me=null, recovery=false, seq=0, loginMsg='', curView='';
+let db={users:[],roles:[],types:[],events:[],parts:{},posts:[],reads:[],
+        groups:[],members:[],targets:[],polls:{},proles:[],pollOpts:[],results:{},myVotes:[],reactions:[],media:[],ideas:[],invites:[]};
+const IST={neu:'🆕 Neu',geplant:'📌 Geplant',umgesetzt:'✅ Umgesetzt',abgelehnt:'🚫 Abgelehnt'};
+let brand={name:'Eventplaner',logo_url:null,bg_url:null,theme:'glass',accent:'#4f46e5',
+           archive_events_days:null,archive_posts_days:null,reply_anon_allowed:true,features:null};
+const httpsUrl=u=>/^https:\/\/[^"'()\s\\]+$/.test(u||'')?u:null;  // nur das darf in url(...) landen
+const EMOJI=['👍','❤️','😂','🎉','👏'];
+let bflt={q:'',unread:false,open:false,archive:false};
+// wie bei den Terminen: gespeichert wird, was ausgeblendet ist
+let iflt=Object.assign({q:'',hideSt:['umgesetzt','abgelehnt'],mine:false},(()=>{try{return JSON.parse(store('iflt')||'{}')}catch(e){return {}}})());
+const THEMES={glass:'🫧 Glas',aurora:'🌈 Aurora',neon:'💡 Neon',mono:'▫️ Monochrom',plain:'◻️ Schlicht'};
+const FEATURES={board:'📌 Pinnwand',polls:'📊 Umfragen an Beiträgen',ideas:'💡 Vorschläge',
+  media:'🖼 Bilder an Terminen und Beiträgen',reactions:'👍 Reaktionen',reads:'👁 Gelesen-Anzeige',
+  rides:'🚗 Fahrgemeinschaften',maybe:'❔ Antwort „Vielleicht"',invites:'🎯 Angefragt (wessen Antwort erwartet wird)',
+  mail:'✉️ Mail bei neuen Beiträgen',push:'📱 Push aufs Handy bei neuen Beiträgen',
+  signup:'📝 Selbst registrieren auf der Login-Seite',nick:'🏷 Spitznamen'};
+// Bereich -> Schalter darin; muss zu feature_area() in migrations/016_v22.sql passen
+const AREA_FEAT={'settings.look':[],'settings.events':['rides','maybe','invites'],
+  'settings.board':['board','polls','media','reactions','reads'],'settings.ideas':['ideas'],
+  'settings.notify':['mail','push'],'settings.access':['signup','nick']};
+// Fehlt die Spalte (Migration noch nicht eingespielt), ist alles an – wie bisher. Die Schalter aus 016 gelten bis
+// dahin ebenfalls als an; erkennbar am DB-Stand, denn ihr Fehlen im Array kann auch "abgeschaltet" heißen.
+const feat=k=>!Array.isArray(brand.features)||brand.features.includes(k)
+  ||(!(brand.dbv>=22)&&['rides','maybe','invites','mail','push','signup','nick'].includes(k));
+// Rechte, die nur mit einem bestimmten Baustein Sinn ergeben – ist er aus, verschwinden sie aus der Rollenverwaltung
+const PERM_FEAT={'posts.create':'board','polls.create':'polls','reads.view':'reads','ideas.manage':'ideas','view.maybe':'maybe'};
+const permOn=k=>!PERM_FEAT[k]||feat(PERM_FEAT[k]);
+const MODES={auto:'◐',light:'☀',dark:'☾'}, MODE_T={auto:'automatisch',light:'hell',dark:'dunkel'};
+const store=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.setItem(k,v)}catch(e){return null}};
+// Schriftfarbe auf dem Akzent: heller Akzent braucht dunkle Schrift (WCAG-Luminanz)
+function fgFor(hex){
+  const n=parseInt(hex.slice(1),16), l=[n>>16&255,n>>8&255,n&255]
+    .map(v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4});
+  return .2126*l[0]+.7152*l[1]+.0722*l[2]>.45?'#0b0d12':'#ffffff';
+}
+let mode=store('mode')||'auto';
+function applyMode(){
+  const d=document.documentElement;
+  d.dataset.mode=mode==='auto'?(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'):mode;
+  const b=$('#mode'); if(b){const next=MODE_T[{auto:'light',light:'dark',dark:'auto'}[mode]];
+    b.textContent=MODES[mode]; b.title='Darstellung: '+MODE_T[mode]+' – klicken für '+next;
+    b.setAttribute('aria-label',b.title)}
+}
+// Gespeichert wird, was AUSGEBLENDET ist – so bleiben später angelegte Termin-Arten automatisch sichtbar
+let flt=Object.assign({q:'',when:'upcoming',hideSt:[],hideTypes:[],inv:false},(()=>{try{return JSON.parse(store('flt')||'{}')}catch(e){return {}}})());
+const userById=id=>db.users.find(u=>u.id===id);
+const roleById=id=>db.roles.find(r=>r.id===id);
+const typeOf=e=>{const t=db.types.find(t=>t.id===e.type_id)||{name:'Ohne Art',color:'#6b7280',rides:true};
+  return feat('rides')?t:{...t,rides:false}};
+// Anzeigename: Spitzname (wenn erlaubt) statt echtem Namen; real behält den echten für Verwalter
+const withNick=p=>({...p,real:p.name,name:(feat('nick')&&p.nick)||p.name});
+// Für Benutzerliste und Log: beides, damit ein Spitzname nicht zum Verstecken taugt
+const fullName=u=>!u?'?':u.real&&u.real!==u.name?`${u.name} (${u.real})`:u.name;
+const badge=e=>{const t=typeOf(e);return `<span class="badge" style="--c:${esc(t.color)}">${esc(t.name)}</span>`};
+// Rechte aller Rollen addieren sich
+const can=p=>!!me&&(me.is_owner||me.roles.some(r=>roleById(r)?.perms.includes(p)));
+const rolesOf=id=>db.proles.filter(x=>x.user_id===id).map(x=>x.role_id);
+// Nur Anzeige – durchgesetzt wird es in guard_profile_roles()/guard_role()
+const mayGrant=r=>me.is_owner||(can('users.manage')?r.perms.every(can):can('users.approve')&&r.approvable);
+const canEdit=e=>can('events.edit')||(e.created_by===me.id&&can('events.create'));
+function invitedIds(evId){
+  const ids=new Set();
+  const inv=db.invites.filter(x=>x.event_id===evId);
+  for(const i of inv.filter(x=>!x.exclude)){
+    if(i.user_id)ids.add(i.user_id);
+    else db.members.filter(m=>m.group_id===i.group_id).forEach(m=>ids.add(m.user_id));
+  }
+  for(const i of inv.filter(x=>x.exclude))ids.delete(i.user_id);   // ausgenommen schlägt Gruppe
+  return [...ids].filter(id=>userById(id));   // nur freigegebene Personen
+}
+const isAdminArea=()=>['users.approve','users.manage','groups.manage','log.view','backup.export','backup.import',...SET_PERMS].some(can);
+const canEditPost=p=>can('users.manage')||(p.created_by===me.id&&can('posts.create'));
+const isRead=id=>db.reads.some(r=>r.post_id===id&&r.user_id===me.id);
+const unread=()=>feat('board')?db.posts.filter(p=>!isRead(p.id)).length:0;
+const groupById=id=>db.groups.find(g=>g.id===id);
+const pollClosed=q=>!!q.closes_at&&new Date(q.closes_at)<new Date();
+// Archiv: von Hand gesetzt oder nach X Tagen automatisch – letzteres wird nur gerechnet, nichts in der DB verändert
+const daysAgo=n=>new Date(Date.now()-n*864e5).toLocaleDateString('sv');
+const evArchived=e=>!!e.archived_at||(brand.archive_events_days>0&&e.date<daysAgo(brand.archive_events_days));
+const postArchived=p=>!!p.archived_at||(brand.archive_posts_days>0&&p.created_at.slice(0,10)<daysAgo(brand.archive_posts_days));
+const optText=o=>o.at?fmtDT(o.at):o.label;
+
+function applyBrand(){
+  document.title=brand.name;
+  const myT=store('myTheme'), myA=store('myAccent');
+  const d=document.documentElement;
+  const acc=/^#[0-9a-f]{6}$/i.test(myA||'')?myA:(brand.accent||'#4f46e5'), fg=fgFor(acc);
+  d.dataset.theme=THEMES[myT]?myT:(THEMES[brand.theme]?brand.theme:'glass');
+  d.style.setProperty('--acc',acc); d.style.setProperty('--acc-fg',fg);
+  const bg=httpsUrl(brand.bg_url);
+  d.style.setProperty('--bgimg',bg?`url("${bg}")`:'none');
+  d.style.setProperty('--bgveil',bg?'linear-gradient(color-mix(in srgb,var(--bg) 62%,transparent),color-mix(in srgb,var(--bg) 62%,transparent))':'none');
+  store('theme',THEMES[brand.theme]?brand.theme:'glass'); store('accent',brand.accent||'#4f46e5');
+  store('accentFg',fg); store('bg',bg||'');
+  // Das Manifest ist eine echte Datei (manifest.json) – ein zur Laufzeit erzeugtes reicht für Push auf dem
+  // iPhone nicht. Name und Symbol auf dem Home-Bildschirm nimmt iOS aber aus diesen beiden, die bleiben dynamisch.
+  const icon=httpsUrl(brand.logo_url);
+  $('link[rel="apple-touch-icon"]').href=icon||'icon-192.png';
+  let an=document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if(!an){an=document.createElement('meta');an.name='apple-mobile-web-app-title';document.head.append(an)}
+  an.content=brand.name;
+  let tc=document.querySelector('meta[name=theme-color]');
+  if(!tc){tc=document.createElement('meta');tc.name='theme-color';document.head.append(tc)}
+  tc.content=acc;
+  $('.brand').innerHTML=(brand.logo_url?`<img class="logo" src="${esc(brand.logo_url)}" alt="">`:'🎉 ')+esc(brand.name);
+  let l=document.querySelector('link[rel=icon]');
+  if(!l){l=document.createElement('link');l.rel='icon';document.head.append(l)}
+  l.href=brand.logo_url||'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="78" font-size="80">🎉</text></svg>';
+}
+async function loadBrand(){
+  const [{data},v]=await Promise.all([sb.from('app_settings').select('*').maybeSingle(),sb.rpc('db_version')]);
+  if(data)brand={...data,dbv:v.data};
+  applyBrand();
+}
+function drawNav(){
+  const tab=(h,l)=>`<a href="#${h}" class="${curView===h?'on':''}">${l}</a>`, u=unread();
+  const neu=can('ideas.manage')?db.ideas.filter(i=>i.status==='neu').length:0;
+  $('#nav').innerHTML=(feat('board')?tab('board','Pinnwand'+(u?` <span class="nbadge">${u}</span>`:'')):'')
+    +tab('events','Termine')+tab('mine','Meine Termine')
+    +(feat('ideas')?tab('ideas','Vorschläge'+(neu?` <span class="nbadge">${neu}</span>`:'')):'')
+    +(isAdminArea()?tab('admin','Verwaltung'):'');
+}
+const closed=e=>!!e.deadline&&new Date(e.deadline)<new Date();
+// Ausgebucht lässt sich nur mit Sichtrecht auf Zusagen ausrechnen; sonst meldet es der Server beim Speichern
+const full=e=>!!e.max_parts&&can('view.yes')&&stats(e.id).yes>=e.max_parts;
+const capChip=e=>!e.max_parts?'':full(e)?'<span class="chip danger">🔒 Ausgebucht</span>'
+  :`<span class="chip">👥 ${can('view.yes')?stats(e.id).yes+' / '+e.max_parts:'max. '+e.max_parts} Plätze</span>`;
+const rideText=x=>x.status!=='ja'?'':x.ride==='drive'?`🚗 fährt (${x.seats} Plätze)`:x.ride==='need'?(x.with?`mitfahrend bei ${esc(userById(x.with)?.name)}`:'<span class="warn">sucht Mitfahrt</span>'):'eigene Anreise';
+const byText=(x,uid)=>x.by&&x.by!==uid?` <span class="by">✏️ eingetragen von ${esc(userById(x.by)?.name||'jemand anderem')}</span>`:'';
+
+// freie Plätze bei Fahrer (Anzeige; verbindlich prüft der DB-Trigger check_part)
+function free(parts,driverId,except){
+  const d=parts[driverId];
+  if(!d||d.status!=='ja'||d.ride!=='drive')return 0;
+  return d.seats-Object.entries(parts).filter(([u,x])=>u!==except&&x.status==='ja'&&x.with===driverId).length;
+}
+{const p={d:{status:'ja',ride:'drive',seats:2},a:{status:'ja',ride:'need',with:'d'},b:{status:'nein',with:'d'}};
+ console.assert(free(p,'d')===1&&free(p,'d','a')===2&&free(p,'a')===0,'Selbsttest free() fehlgeschlagen')}
+
+function stats(evId){
+  const p=Object.entries(db.parts[evId]||{}).filter(([u])=>userById(u)).map(([,x])=>x);
+  const yes=p.filter(x=>x.status==='ja'), drivers=yes.filter(x=>x.ride==='drive');
+  const seats=drivers.reduce((s,x)=>s+x.seats,0), riding=yes.filter(x=>x.ride==='need'&&x.with).length;
+  return {yes:yes.length,maybe:p.filter(x=>x.status==='vielleicht').length,free:seats-riding,open:yes.filter(x=>x.ride==='need'&&!x.with).length};
+}
+
+// shortcut: lädt bei jedem Seitenwechsel alles neu, kein Live-Update – reicht für Vereinsgröße; bei Bedarf Supabase Realtime nutzen
+async function loadAll(){
+  const [u,r,t,e,p,po,rd,md,id,gr,gm,ei,pr]=await Promise.all([
+    sb.from('profiles').select('*').order('name'),   // * statt Spaltenliste: läuft auch ohne Migration 016
+    sb.from('roles').select('*').order('name'),
+    sb.from('event_types').select('*').order('name'),
+    sb.from('events').select('*').order('date').order('time'),
+    sb.from('parts').select('*'),
+    sb.from('posts').select('*').order('created_at',{ascending:false}),
+    sb.from('post_reads').select('post_id,user_id'),
+    sb.from('media').select('*').order('pos'),
+    sb.rpc('ideas_list'),
+    sb.from('groups').select('*').order('name'),
+    sb.from('group_members').select('*'),
+    sb.from('event_invites').select('*'),
+    sb.from('profile_roles').select('*')]);
+  const err=u.error||r.error||t.error||e.error||p.error||po.error||rd.error||md.error||pr.error; if(err)throw err;
+  db.proles=pr.data;
+  db.posts=po.data; db.reads=rd.data; db.media=md.data;
+  db.ideas=id.error?[]:id.data;   // fehlt die Migration, bleibt der Reiter einfach leer
+  db.groups=gr.error?[]:gr.data; db.members=gm.error?[]:gm.data;
+  db.invites=ei.error||!feat('invites')?[]:ei.data;   // ohne Migration 014 oder abgeschaltet: keine Anfragen
+  db.users=u.data.filter(x=>x.is_owner||rolesOf(x.id).length).map(withNick).sort((a,b)=>a.name.localeCompare(b.name,'de'));
+  db.roles=r.data; db.types=t.data;
+  db.events=e.data.map(x=>({...x,time:x.time?x.time.slice(0,5):'',desc:x.descr||'',location:x.location||''}));
+  db.parts={};
+  for(const x of p.data)(db.parts[x.event_id]??={})[x.user_id]={status:x.status,ride:x.ride,seats:x.seats,with:x.with_id||'',note:x.note||'',by:x.updated_by||''};
+}
+
+// shortcut: Pinnwand-Details erst beim Öffnen laden – spart ~8 Abfragen auf allen anderen Seiten
+async function loadBoard(){
+  const [tg,pl,po,v,res,rx]=await Promise.all([
+    sb.from('post_targets').select('*'),
+    sb.from('polls').select('*'),
+    sb.from('poll_options').select('*').order('pos'),
+    sb.from('votes').select('option_id'),
+    sb.rpc('poll_results'),
+    sb.from('post_reactions').select('*')]);
+  const err=tg.error||pl.error||po.error||v.error||res.error||rx.error; if(err)throw err;
+  db.targets=tg.data; db.pollOpts=po.data; db.reactions=rx.data;
+  db.myVotes=v.data.map(x=>x.option_id);
+  db.polls={}; for(const q of pl.data)db.polls[q.post_id]=q;
+  db.results={}; for(const r of res.data)db.results[r.option_id]=r;
+}
+
+async function render(){
+  const t=++seq;  // nur der letzte render() darf zeichnen
+  try{
+    if(dlg.open)dlg.close();
+    if(recovery)return viewRecovery();
+    const {data:{session}}=await sb.auth.getSession();
+    if(t!==seq)return;
+    if(!session){me=null;who.innerHTML='';$('#nav').innerHTML='';hint.innerHTML='';return viewLogin()}
+    const {data:aal}=await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    if(aal&&aal.nextLevel==='aal2'&&aal.currentLevel!=='aal2'){who.innerHTML='';$('#nav').innerHTML='';hint.innerHTML='';return viewMfaVerify()}
+    const {data:p,error}=await sb.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
+    if(error)throw error;
+    if(t!==seq)return;
+    // eigene Zuordnung ist auch ohne Freigabe lesbar – leer heißt nicht freigegeben
+    const {data:pr,error:pe}=await sb.from('profile_roles').select('role_id').eq('user_id',session.user.id);
+    if(pe)throw pe;
+    if(!p||(!pr.length&&!p.is_owner)){  // nicht freigegeben → gar nicht erst reinlassen
+      loginMsg='Dein Konto ist noch nicht freigegeben. Ein Admin muss dich erst freischalten – danach kannst du dich anmelden.';
+      await sb.auth.signOut();return viewLogin();
+    }
+    me={...withNick(p),roles:pr.map(x=>x.role_id)};
+    const mfa=await checkMfa();
+    await checkDb();
+    // Rolle verlangt MFA, es ist aber noch keiner eingerichtet -> ohne Einrichtung geht nichts
+    if(!p.is_owner&&mfa.req&&!mfa.has){
+      who.innerHTML='';$('#nav').innerHTML='';hint.innerHTML='';return viewMfaEnroll(true);
+    }
+    await loadAll();
+    if(t!==seq)return;
+    const [view,id]=location.hash.slice(1).split('/');
+    curView=view||(feat('board')?'board':'events');   // ohne Hash startet die Pinnwand, sonst die Termine
+    if((curView==='board'&&!feat('board'))||(curView==='ideas'&&!feat('ideas')))curView='events';
+    drawNav(); drawHint();
+    who.innerHTML=`<span class="badge">${me.is_owner?'👑 Besitzer':esc(me.roles.map(r=>roleById(r)?.name).filter(Boolean).join(', '))}</span>`
+    +`<button class="link" onclick="accountDialog()" title="Mein Konto und Zwei-Faktor-Anmeldung">`
+    +`${mfaState.has?'🔐':'⚙️'} ${esc(me.name)}</button>`
+    +`<button class="sec" onclick="logout()">Abmelden</button>`;
+    // einmal je Gerät aktiv fragen statt nur still anzubieten; "Nicht jetzt" merkt sich das
+    if(mfa.ok&&!mfa.has&&!store('mfaSeen'))return viewMfaEnroll(false);
+    const ev=db.events.find(e=>e.id===id);
+    if(view==='event'&&ev)return viewEvent(id);
+    if(view==='edit'&&(ev?canEdit(ev):id==='new'&&can('events.create')))return viewEdit(id);
+    if(curView==='board'){await loadBoard();if(t!==seq)return;return viewBoard()}
+    if(curView==='events'&&(view==='board'||view==='ideas'))return viewList(false);
+    if(view==='post'){await loadBoard();if(t!==seq)return;
+      const po=db.posts.find(x=>x.id===id);
+      if(po?canEditPost(po):id==='new'&&can('posts.create'))return viewPostEdit(id);
+      return viewBoard();}
+    if(curView==='ideas')return viewIdeas();
+    if(view==='admin'&&isAdminArea())return await viewAdmin(id);
+    viewList(view==='mine');
+  }catch(e){app.innerHTML=`<div class="card"><h2>Fehler</h2><p class="err">${esc(de(e.message))}</p><button onclick="render()">Nochmal</button></div>`}
+}
+async function logout(){loginMsg='';hint.innerHTML='';
+  try{await pushOff()}catch(e){}   // sonst bekommt der Nächste an diesem Gerät die Mitteilungen des Vorigen
+  await sb.auth.signOut();location.hash=''}
+
+// ---------- Zwei-Faktor-Anmeldung ----------
+// Supabase prüft den Code; die DB-Regeln sehen die erreichte Stufe im Token (aal1 / aal2).
+const factors=async()=>((await sb.auth.mfa.listFactors()).data?.totp||[]).filter(f=>f.status==='verified');
+const NEED_DB=25;   // bei jeder neuen Migration hier UND in der Migration hochzählen
+let dbState={v:null,ok:true,missing:[]};
+async function checkDb(){
+  // db_check() legt pruefen.sql an und nennt jede fehlende Datei einzeln – genauer als die Versionsnummer,
+  // die nur stimmt, wenn wirklich alles der Reihe nach lief
+  const chk=await sb.rpc('db_check');
+  if(!chk.error){const missing=chk.data.filter(r=>!r.ok).map(r=>r.migration);
+    return dbState={v:null,ok:!missing.length,missing}}
+  const {data,error}=await sb.rpc('db_version');
+  return dbState=error?{v:null,ok:false,missing:[]}:{v:data,ok:data>=NEED_DB,missing:[]};
+}
+let mfaState={req:false,has:false,ok:true,err:''};
+// ---------- Push-Mitteilungen ----------
+const pushReady=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+const isIOS=()=>/iPhone|iPad|iPod/.test(navigator.userAgent);
+const isStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+// getRegistration() statt .ready: .ready wartet ohne aktiven Service Worker (z. B. sw.js fehlt) unbegrenzt –
+// dann öffnete sich das Konto-Menü nie und Abmelden hing
+async function pushSub(){
+  if(!pushReady())return null;
+  try{const reg=await navigator.serviceWorker.getRegistration();
+    return reg?await reg.pushManager.getSubscription():null}catch(e){return null}
+}
+// VAPID-Schlüssel kommt base64url, der Browser will Bytes
+const b64u=s=>Uint8Array.from(atob((s+'='.repeat((4-s.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+async function pushOn(){
+  // muss direkt aus dem Klick kommen, sonst fragt Safari gar nicht erst
+  const perm=await Notification.requestPermission();
+  if(perm!=='granted')return 'Mitteilungen sind für diese Seite blockiert. In den Einstellungen des Browsers bzw. des Handys erlauben.';
+  const reg=await navigator.serviceWorker.getRegistration();
+  if(!reg)return 'Push ist auf diesem Gerät gerade nicht verfügbar – liegt sw.js auf dem Server?';
+  let sub=await reg.pushManager.getSubscription();
+  if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64u(brand.vapid_public)});
+  const j=sub.toJSON();
+  const {error}=await sb.rpc('push_register',{ep:j.endpoint,k1:j.keys.p256dh,k2:j.keys.auth});
+  return error?.message;
+}
+async function pushOff(){
+  const sub=await pushSub(); if(!sub)return;
+  await sb.from('push_subs').delete().eq('endpoint',sub.endpoint);
+  await sub.unsubscribe();
+}
+async function checkMfa(){
+  const r=await sb.rpc('mfa_required');
+  // Fehler hier hiess bisher: es passiert einfach nichts. Jetzt sagen wir, was fehlt.
+  if(r.error){mfaState={req:false,has:false,ok:false,err:r.error.message};return mfaState}
+  mfaState={req:!!r.data,has:(await factors()).length>0,ok:true,err:''};
+  return mfaState;
+}
+function drawHint(){
+  // Eine vergessene Migration fällt sonst erst irgendwann als Fehler mitten im Formular auf
+  if(!dbState.ok&&can('users.manage')){
+    hint.innerHTML=`<div class="hintbar"><div class="notice">
+      <span>⚠️ <b>Die Datenbank ist nicht auf dem Stand der App.</b>
+      ${dbState.missing.length?`Es fehlen: ${dbState.missing.map(m=>`<code>${esc(m)}</code>`).join(', ')} – bitte in dieser Reihenfolge nachholen.`
+        :dbState.v===null?'Der Stand lässt sich nicht lesen.'
+        :`Datenbank: ${dbState.v}, App erwartet: ${NEED_DB}.`}
+      Was genau fehlt, zeigt <code>pruefen.sql</code> im SQL-Editor.</span>
+      </div></div>`;
+    return;
+  }
+  if(!mfaState.ok){
+    hint.innerHTML=can('users.manage')?`<div class="hintbar"><div class="notice">
+      <span>⚠️ Die Datenbank kennt <code>mfa_required</code> nicht – vermutlich fehlt <code>migrations/006_v9.sql</code>.
+      Bis dahin lässt sich die Zwei-Faktor-Anmeldung nicht erzwingen.<br><span class="small">${esc(mfaState.err)}</span></span>
+      </div></div>`:'';
+    return;
+  }
+  hint.innerHTML='';
+}
+
+async function viewMfaVerify(){   // zweiter Faktor beim Anmelden
+  const fs=await factors();
+  app.innerHTML=`<form id="f" class="card narrow" style="margin-top:6vh"><h2>🔐 Bestätigungscode</h2>
+    <p class="muted small">Sechsstelliger Code aus deiner Authenticator-App.</p>
+    <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+    <div style="margin-top:14px"><button style="width:100%;justify-content:center">Weiter</button></div>
+    <p class="err" id="err"></p>
+    <div class="row end"><button type="button" class="link" onclick="logout()">Abbrechen</button></div></form>`;
+  $('#f').onsubmit=async ev=>{ev.preventDefault();
+    const btn=$('#f').querySelector('button:not([type])');btn.disabled=true;
+    try{
+      const f=fs[0]; if(!f)return showErr('Kein Faktor gefunden.');
+      const ch=await sb.auth.mfa.challenge({factorId:f.id});
+      if(ch.error)return showErr(ch.error.message);
+      const v=await sb.auth.mfa.verify({factorId:f.id,challengeId:ch.data.id,code:ev.target.elements.code.value.trim()});
+      if(v.error)return showErr(v.error.message);
+      render();
+    }finally{btn.disabled=false}};
+}
+async function viewMfaEnroll(forced){   // Einrichtung, bei Pflicht ohne Ausweg
+  app.innerHTML=`<div class="card narrow" style="margin-top:5vh"><h2>🔐 Zwei-Faktor-Anmeldung</h2>
+    ${forced?'<div class="notice">Deine Rolle verlangt die Zwei-Faktor-Anmeldung. Ohne sie kommst du nicht weiter.</div>'
+            :'<p class="muted">Empfohlen: Dein Konto bleibt auch dann geschützt, wenn jemand dein Passwort kennt. Du kannst das auch später machen.</p>'}
+    <p class="muted small">Verbinde dein Konto mit einer Authenticator-App (z. B. Google Authenticator, Aegis, 1Password)
+      und trage danach den Code ein, den sie anzeigt.</p>
+    <div id="qr" class="muted">Wird geladen …</div>
+    <form id="f"><label>Code aus der App<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></label>
+      <div class="row between" style="margin-top:16px"><button>Aktivieren</button>
+        <button type="button" class="${forced?'link':'sec'}" id="skip">${forced?'Abmelden':'Nicht jetzt'}</button></div>
+      <p class="err" id="err"></p></form></div>`;
+  let made=null;
+  // auch wenn das Einrichten scheitert, muss "Nicht jetzt" funktionieren – sonst steckt man fest
+  $('#skip').onclick=forced?logout:async()=>{
+    store('mfaSeen','1');
+    if(made)await sb.auth.mfa.unenroll({factorId:made});   // halbfertigen Versuch nicht liegen lassen
+    render();
+  };
+  // alte, nie fertig bestätigte Versuche wegräumen, sonst sammeln sie sich an
+  for(const f of ((await sb.auth.mfa.listFactors()).data?.totp||[]).filter(f=>f.status!=='verified'))
+    await sb.auth.mfa.unenroll({factorId:f.id});
+  // issuer = Name der App aus den Einstellungen; den Kontonamen (E-Mail) setzt Supabase selbst.
+  // Ohne issuer steht in der Authenticator-App die nackte Projekt-Adresse.
+  const en=await sb.auth.mfa.enroll({factorType:'totp',
+    issuer:(brand.name||'Eventplaner').replace(/[:/?#]/g,' ').trim().slice(0,40)||'Eventplaner',
+    friendlyName:'App '+Date.now()});
+  if(en.error)return $('#qr').innerHTML=`<p class="err">${esc(de(en.error.message))}</p>`;
+  const {id,totp}=en.data; made=id;
+  const {data:{session:se}}=await sb.auth.getSession();
+  // Auf dem Handy kann man den eigenen Bildschirm nicht scannen. Im QR-Code steckt nur dieser Link –
+  // angetippt übergibt ihn das Betriebssystem direkt an die Authenticator-App.
+  const uri=/^otpauth:\/\//.test(totp.uri||'')?totp.uri:'';
+  $('#qr').innerHTML=`
+    ${uri?`<a class="btn" href="${esc(uri)}" id="otp" style="width:100%;justify-content:center">📱 In der Authenticator-App öffnen</a>
+      <p class="muted small" style="margin:6px 0 14px">Auf dem Handy der schnellste Weg – kein Scannen nötig.
+        Passiert nichts? Dann ist keine Authenticator-App installiert.</p>`:''}
+    <p class="muted small" style="margin:0 0 6px">${uri?'Oder mit einem anderen Gerät scannen:':'QR-Code scannen:'}</p>
+    <img src="${esc(totp.qr_code)}" alt="QR-Code" style="width:190px;max-width:100%;background:#fff;padding:8px;border-radius:12px">
+    <p class="muted small">Erscheint in deiner App als <b>${esc(brand.name)}</b>${se?.user?.email?` · ${esc(se.user.email)}`:''}.</p>
+    <p class="muted small">Oder den Schlüssel von Hand eintragen:<br>
+      <code id="sec">${esc(totp.secret)}</code>
+      <button type="button" class="sec small" id="cpy" style="margin-left:8px;padding:3px 10px">Kopieren</button></p>`;
+  $('#cpy').onclick=async()=>{
+    try{await navigator.clipboard.writeText(totp.secret);$('#cpy').textContent='Kopiert ✓'}
+    catch(e){getSelection().selectAllChildren($('#sec'))}   // ohne Zwischenablage-Recht wenigstens markieren
+  };
+  $('#f').onsubmit=async ev=>{ev.preventDefault();
+    const btn=ev.target.querySelector('button:not([type])');btn.disabled=true;
+    try{
+      const ch=await sb.auth.mfa.challenge({factorId:id});
+      if(ch.error)return showErr(ch.error.message);
+      const v=await sb.auth.mfa.verify({factorId:id,challengeId:ch.data.id,code:ev.target.elements.code.value.trim()});
+      if(v.error)return showErr(v.error.message);
+      store('mfaSeen','1'); made=null;
+      render();
+    }finally{btn.disabled=false}};
+}
+function pushHtml(sub){
+  if(!brand.vapid_public)return '<p class="muted small">📱 Push aufs Handy ist hier noch nicht eingerichtet.</p>';
+  if(!pushReady())return isIOS()&&!isStandalone()
+    ?'<p class="small">📱 <b>Push auf dem iPhone:</b> erst über <i>Teilen → Zum Home-Bildschirm</i> hinzufügen, die App von dort öffnen und hier einschalten. Im Safari-Tab geht es nicht.</p>'
+    :'<p class="muted small">📱 Dieser Browser kann keine Push-Mitteilungen.</p>';
+  return sub
+    ?'<div class="row between"><span class="small">📱 Push auf diesem Gerät ist <b>an</b>.</span><button type="button" class="sec" id="pushoff">Ausschalten</button></div>'
+    :'<div class="row between"><span class="small">📱 Push aufs Handy bei neuen Pinnwand-Beiträgen</span><button type="button" id="pushon">Einschalten</button></div>';
+}
+async function accountDialog(){
+  const psub=await pushSub();
+  const fs=await factors(), need=mfaState.req;
+  openDialog(`<h3>Mein Konto</h3><p class="muted small">${esc(me.real)}</p>
+    ${feat('nick')?`<label>Spitzname <span class="muted">(leer = echter Name)</span><input name="nick" maxlength="30" value="${esc(me.nick)}"></label>
+      <p class="muted small" style="margin:4px 0 0">Erscheint überall statt deines Namens. Die Verwaltung sieht weiterhin beides.</p>`:''}
+    <h4>Zwei-Faktor-Anmeldung</h4>
+    <p class="small">${fs.length?'✅ Aktiv – beim Anmelden wird ein Code abgefragt.'
+      :(need?'<span class="warn">Deine Rolle verlangt sie.</span>':'Empfohlen: schützt dein Konto auch, wenn jemand dein Passwort kennt.')}</p>
+    <div class="row" style="margin-top:10px">${fs.length
+      ?`<button type="button" class="sec" id="mfaoff" ${need?'disabled title="Deine Rolle verlangt sie"':''}>Ausschalten</button>`
+      :'<button type="button" id="mfaon">Jetzt einrichten</button>'}</div>
+    <h4>Mein Aussehen</h4>
+    <p class="muted small" style="margin:0 0 4px">Gilt nur für dich und nur in diesem Browser.</p>
+    <div class="seg">${[['','🏠 Wie für alle'],...Object.entries(THEMES)].map(([k,l])=>
+      `<label><input type="radio" name="mytheme" value="${k}" ${(store('myTheme')||'')===k?'checked':''}>${l}</label>`).join('')}</div>
+    <div class="row" style="margin-top:8px"><label style="flex:0 0 110px;min-width:0">Akzentfarbe
+      <input type="color" name="myaccent" value="${esc(store('myAccent')||brand.accent||'#4f46e5')}"></label>
+      <label class="check" style="flex:1"><input type="checkbox" name="myacc" ${store('myAccent')?'checked':''}> eigene Farbe verwenden</label></div>
+    ${feat('mail')||feat('push')?'<h4>Benachrichtigungen</h4>':''}
+    ${feat('mail')?`${sw('notify','1','Mail bei neuen Pinnwand-Beiträgen',me.notify!==false)}
+    <p class="muted small" style="margin:4px 0 0">Nur Beiträge, die du auch sehen darfst. Du bekommst nie eine Mail über deine eigenen.</p>`:''}
+    ${feat('push')?`<div style="margin-top:12px" id="pushbox">${pushHtml(psub)}</div>`:''}`,
+    async fd=>{
+      store('myTheme',fd.get('mytheme')||'');
+      store('myAccent',fd.has('myacc')?fd.get('myaccent'):'');
+      if(fd.has('nick')&&fd.get('nick').trim()!==(me.nick||'')){
+        const {error}=await sb.rpc('nick_set',{n:fd.get('nick')});
+        if(error)return error.message;
+      }
+      const want=fd.has('notify');
+      if(!feat('mail')||want===(me.notify!==false))return;
+      const {error}=await sb.rpc('notify_set',{on_:want});
+      if(error)return error.message;
+      me.notify=want;
+    });
+  // Vorschau beim Anklicken; Abbrechen stellt das gespeicherte Aussehen wieder her
+  const df=$('#df');
+  df.onchange=()=>{const d=document.documentElement, t=df.elements.mytheme.value;
+    d.dataset.theme=t||(THEMES[brand.theme]?brand.theme:'glass');
+    const a=df.elements.myacc.checked?df.elements.myaccent.value:(brand.accent||'#4f46e5');
+    d.style.setProperty('--acc',a); d.style.setProperty('--acc-fg',fgFor(a))};
+  dlg.addEventListener('close',applyBrand,{once:true});
+  const bindPush=()=>{
+    const pon=$('#pushon'), poff=$('#pushoff');
+    if(pon)pon.onclick=async()=>{pon.disabled=true;
+      let err; try{err=await pushOn()}catch(e){err=e.message}
+      if(err){$('#derr').textContent=de(err);pon.disabled=false;return}
+      $('#pushbox').innerHTML=pushHtml(await pushSub());bindPush()};
+    if(poff)poff.onclick=async()=>{poff.disabled=true;
+      try{await pushOff()}catch(e){$('#derr').textContent=de(e.message)}
+      $('#pushbox').innerHTML=pushHtml(await pushSub());bindPush()};
+  };
+  bindPush();
+  const on=$('#mfaon'), off=$('#mfaoff');
+  if(on)on.onclick=()=>{dlg.close();viewMfaEnroll(false)};
+  if(off)off.onclick=async()=>{
+    for(const f of fs){const r=await sb.auth.mfa.unenroll({factorId:f.id});
+      if(r.error)return $('#derr').textContent=de(r.error.message)}
+    dlg.close();render();
+  };
+}
+
+// ---------- Login ----------
+async function viewLogin(mode='login'){
+  const T={login:'Anmelden',reg:'Registrieren',reset:'Passwort vergessen'};
+  app.innerHTML=`<form id="f" class="card narrow" style="margin-top:6vh">
+    <div style="text-align:center;margin-bottom:6px">${brand.logo_url?`<img src="${esc(brand.logo_url)}" alt="" style="max-height:72px;max-width:100%;border-radius:10px">`:'<span style="font-size:40px">🎉</span>'}
+      <div style="font-weight:750;font-size:19px;margin-top:4px">${esc(brand.name)}</div></div>
+    <h2>${T[mode]}</h2>
+    ${mode==='reg'?`<div class="row"><label>Vorname<input name="fn" required maxlength="50" autocomplete="given-name"></label>
+      <label>Nachname<input name="ln" required maxlength="50" autocomplete="family-name"></label></div>
+      ${feat('nick')?'<label>Spitzname (optional, wird statt des Namens angezeigt)<input name="nick" maxlength="30" autocomplete="nickname"></label>':''}`:''}
+    <label>E-Mail<input name="email" type="email" required autocomplete="email"></label>
+    ${mode!=='reset'?`<label>Passwort${mode==='reg'?' (min. 8 Zeichen)':''}<input name="pw" type="password" required minlength="8" autocomplete="${mode==='reg'?'new-password':'current-password'}"></label>`:''}
+    <div style="margin-top:16px"><button style="width:100%;justify-content:center">${mode==='reset'?'Link zuschicken':T[mode]}</button></div><p class="err" id="err"></p>
+    <div class="row between">${Object.keys(T).filter(m=>m!==mode&&(m!=='reg'||feat('signup'))).map(m=>`<button type="button" class="link" data-m="${m}">${m==='reg'?'Neu registrieren':T[m]}</button>`).join('')}</div>
+    <p class="muted small" id="ownerhint" hidden>Ersteinrichtung: Noch kein Besitzer festgelegt. Registriere dich und führe danach die Besitzer-Zeile aus der README im Supabase SQL Editor aus.</p></form>`;
+  if(loginMsg)showErr(loginMsg);
+  const f=$('#f');
+  f.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>viewLogin(b.dataset.m));
+  f.onsubmit=async e=>{e.preventDefault();loginMsg='';showErr('');
+    const v=Object.fromEntries(new FormData(f)), btn=f.querySelector('button:not([type])');btn.disabled=true;
+    try{
+      if(mode==='login'){const {error}=await sb.auth.signInWithPassword({email:v.email,password:v.pw});if(error)throw error}
+      if(mode==='reg'){const fn=v.fn.trim(), ln=v.ln.trim();
+        // name zusätzlich, damit auch eine Datenbank ohne Migration 016 den vollen Namen bekommt
+        const {data,error}=await sb.auth.signUp({email:v.email,password:v.pw,options:{emailRedirectTo:here(),
+          data:{first_name:fn,last_name:ln,name:(fn+' '+ln).slice(0,50),nick:v.nick?.trim()||undefined}}});
+        if(error)throw error;
+        showErr(data.session?'Registriert – ein Admin muss dein Konto noch freigeben.':'Bestätigungs-Mail ist unterwegs – Link anklicken. Danach muss ein Admin dein Konto freigeben.',1)}
+      if(mode==='reset'){const {error}=await sb.auth.resetPasswordForEmail(v.email,{redirectTo:here()});if(error)throw error;
+        showErr('Falls die Adresse registriert ist, kommt gleich eine Mail.',1)}
+    }catch(err){showErr(err.message)}finally{btn.disabled=false}};
+  const {data:owner}=await sb.rpc('has_owner');
+  if(owner===false&&$('#ownerhint'))$('#ownerhint').hidden=false;
+}
+function viewRecovery(){
+  app.innerHTML=`<form id="f" class="card narrow"><h2>Neues Passwort</h2><label>Passwort (min. 8 Zeichen)<input name="pw" type="password" required minlength="8" autocomplete="new-password"></label><div style="margin-top:14px"><button>Speichern</button></div><p class="err" id="err"></p></form>`;
+  $('#f').onsubmit=async e=>{e.preventDefault();const {error}=await sb.auth.updateUser({password:e.target.elements.pw.value});
+    if(error)return showErr(error.message);recovery=false;location.hash='';render()};
+}
+
+// ---------- Terminliste ----------
+function viewList(mine){
+  // "Meine Termine" ist eine eigene Ansicht, kein Filter-Preset: sonst schleppt der Reiterwechsel
+  // die Einschränkung mit (das war der Bug) und die Status-Chips wären dort sinnlos.
+  const noType=db.events.some(e=>!e.type_id);
+  const chip=(name,val,label,hidden)=>`<label><input type="checkbox" name="${name}" value="${esc(val)}" ${hidden.includes(val)?'':'checked'}>${label}</label>`;
+  app.innerHTML=`<div class="head"><h2>${mine?'Meine Termine':'Termine'}</h2>${can('events.create')?'<a class="btn" href="#edit/new">+ Neuer Termin</a>':''}</div>
+    <form id="flt" class="filters card" onsubmit="return false">
+      <label>Suche<input name="q" value="${esc(flt.q)}" placeholder="Titel, Ort …" type="search"></label>
+      <label>Zeitraum<select name="when">${opts({upcoming:'Kommende',past:'Vergangene',all:'Alle',archive:'📦 Archiv'},flt.when)}</select></label>
+      ${mine?'':`<fieldset><legend>Meine Antwort <span style="font-weight:400">– abwählen blendet aus</span></legend>
+        <div class="seg multi">${[['ja','✅ Dabei'],['vielleicht','❔ Vielleicht'],['offen','⏳ Noch offen'],['nein','❌ Abgesagt']]
+          .filter(([k])=>k!=='vielleicht'||feat('maybe')).map(([k,l])=>chip('st',k,l,flt.hideSt)).join('')}</div></fieldset>`}
+      ${!mine&&db.invites.length?`<fieldset><legend>Anzeigen</legend><div class="seg">
+        <label><input type="checkbox" name="inv" ${flt.inv?'checked':''}>🎯 Nur wo ich angefragt bin</label></div></fieldset>`:''}
+      ${db.types.length>1||noType?`<fieldset><legend>Art</legend><div class="seg multi">${
+        db.types.map(t=>chip('types',t.id,esc(t.name),flt.hideTypes)).join('')+(noType?chip('types','','Ohne Art',flt.hideTypes):'')}</div></fieldset>`:''}
+    </form><p class="cnt" id="cnt"></p><div id="list"></div>`;
+  const draw=()=>{
+    const now=today(), q=flt.q.toLowerCase();
+    let evs=db.events.filter(e=>{
+      const x=db.parts[e.id]?.[me.id], stat=x?x.status:'offen', arch=evArchived(e);
+      return (flt.when==='archive'?arch:!arch)
+        &&!flt.hideTypes.includes(e.type_id||'')
+        &&(flt.when!=='upcoming'||e.date>=now)&&(flt.when!=='past'||e.date<now)
+        &&(mine?['ja','vielleicht'].includes(stat):!flt.hideSt.includes(stat))
+        &&(mine||!flt.inv||invitedIds(e.id).includes(me.id))
+        &&hits(`${e.title} ${e.location} ${e.desc} ${typeOf(e).name}`,q)});
+    if(flt.when==='past')evs=evs.reverse();
+    $('#cnt').textContent=evs.length===db.events.length?`${evs.length} ${evs.length===1?'Termin':'Termine'}`:`${evs.length} von ${db.events.length} Terminen`;
+    $('#list').innerHTML=evs.length?`<div class="grid">${evs.map(card).join('')}</div>`
+      :`<div class="card muted">${mine?'Du bist bei keinem passenden Termin dabei.':'Keine passenden Termine – prüf mal die Filter oben.'}</div>`;
+  };
+  $('#flt').oninput=ev=>{
+    const n=ev.target.name;
+    if(n==='inv'){flt.inv=ev.target.checked;store('flt',JSON.stringify(flt));return draw()}
+    if(n==='st'||n==='types')flt[n==='st'?'hideSt':'hideTypes']=
+      [...$('#flt').querySelectorAll('[name='+n+']:not(:checked)')].map(i=>i.value);
+    else flt[n]=ev.target.value;
+    store('flt',JSON.stringify(flt));draw();
+  };
+  draw();
+}
+function card(e){
+  const s=stats(e.id), x=db.parts[e.id]?.[me.id], t=typeOf(e);
+  const inv=invitedIds(e.id), mineInv=inv.includes(me.id);
+  const yesInv=inv.filter(id=>db.parts[e.id]?.[id]?.status==='ja').length;
+  const dl=capChip(e)+(!e.deadline?'':closed(e)?'<span class="chip danger">🔒 Anmeldung geschlossen</span>':`<span class="chip">⏰ Anmeldung bis ${esc(fmtDT(e.deadline))}</span>`);
+  return `<a class="card ${e.date<today()?'past':''}" href="#event/${esc(e.id)}">
+    <div class="row between">${badge(e)}<span class="muted small">${esc(fmt(e))}</span></div>
+    <h3>${esc(e.title)}</h3>${e.location?`<div class="muted small">📍 ${esc(e.location)}</div>`:''}
+    <div class="chips">${can('view.yes')?`<span class="chip">✅ ${s.yes} dabei</span>`:''}${can('view.maybe')&&s.maybe?`<span class="chip">❔ ${s.maybe} vielleicht</span>`:''}
+      ${t.rides&&can('view.yes')?`<span class="chip">🚗 ${s.free} Plätze frei</span>${s.open?`<span class="chip warn">🙋 ${s.open} suchen Mitfahrt</span>`:''}`:''}${dl}
+      ${inv.length&&can('view.yes')?`<span class="chip">🎯 ${yesInv} von ${inv.length} zugesagt</span>`:''}
+      ${mineInv?`<span class="chip ${x?'':'warn'}">🎯 Du bist angefragt</span>`:''}</div>
+    <div class="me ${x?'':'open'}">${x?`Du: ${STATUS[x.status]}${x.status==='ja'&&t.rides?' · '+rideText(x):''}${byText(x,me.id)}`:'Du hast noch nicht geantwortet'}</div></a>`;
+}
+
+// ---------- Termin ----------
+function viewEvent(id,forUser=me.id){
+  const e=db.events.find(x=>x.id===id), t=typeOf(e), parts=db.parts[id]||{};
+  const mgr=can('parts.manage'), locked=closed(e)&&!mgr;
+  const p=parts[forUser]||{status:'',ride:'self',seats:3,with:'',note:''};
+  const noYes=full(e)&&p.status!=='ja'&&!mgr;   // wer schon zugesagt hat, bleibt drin
+  const ok=u=>parts[u.id]?.status==='ja';
+  const drivers=db.users.filter(u=>u.id!==forUser&&ok(u)&&parts[u.id].ride==='drive');
+  const seg=(name,obj,val)=>`<div class="seg">${Object.entries(obj).map(([k,v])=>`<label><input type="radio" name="${name}" value="${k}" ${val===k?'checked':''} ${name==='status'?'required':''} ${name==='status'&&k==='ja'&&noYes?'disabled':''}>${v}</label>`).join('')}</div>`;
+  const group=(st,label)=>{const us=db.users.filter(u=>parts[u.id]?.status===st);
+    return us.length?`<h4>${label} <span class="muted">(${us.length})</span></h4><ul class="people">${us.map(u=>{const x=parts[u.id];
+      return `<li><b>${esc(u.name)}</b>${st==='ja'&&t.rides?` <span class="muted small">· ${rideText(x)}</span>`:''}${x.note?` <span class="muted small">„${esc(x.note)}“</span>`:''}${byText(x,u.id)}</li>`}).join('')}</ul>`:''};
+  const allVisible=can('view.yes')&&can('view.maybe')&&can('view.no');
+  const inv=invitedIds(id).map(userById);
+  // Bei angefragten Terminen interessiert "keine Antwort" nur unter den Angefragten – das zeigt der Block unten
+  const none=allVisible&&!inv.length?db.users.filter(u=>!parts[u.id]):[];  // "keine Antwort" nur korrekt, wenn alle Status sichtbar sind
+  // parts kommt per RLS schon gefiltert: fehlt eine Zeile, kann sie unsichtbar sein – "offen" nur sagen, wenn man alles sieht
+  const invBlock=inv.length?`<div class="card"><h3>🎯 Angefragt <span class="muted">(${inv.length})</span></h3>
+    ${can('view.yes')?`<p class="muted small" style="margin:0 0 6px">${inv.filter(u=>parts[u.id]?.status==='ja').length} von ${inv.length} zugesagt</p>`:''}
+    <ul class="people">${inv.map(u=>{const x=parts[u.id];
+      const st=x?STATUS[x.status]:allVisible?'<span class="warn">⏳ offen</span>':'<span class="muted">–</span>';
+      return `<li><b>${esc(u.name)}</b>${u.id===me.id?' <span class="muted">(du)</span>':''} <span class="small">· ${st}</span></li>`}).join('')}</ul></div>`:'';
+  const people=(can('view.yes')?group('ja','✅ Dabei'):'')+(can('view.maybe')?group('vielleicht','❔ Vielleicht'):'')+(can('view.no')?group('nein','❌ Abgesagt'):'')
+    +(none.length?`<h4>⏳ Noch keine Antwort <span class="muted">(${none.length})</span></h4><p class="muted small">${none.map(u=>esc(u.name)).join(', ')}</p>`:'');
+  const open=db.users.filter(u=>ok(u)&&parts[u.id].ride==='need'&&!parts[u.id].with);
+  app.innerHTML=`<a href="#events" class="back">Alle Termine</a>
+  <div class="card"><div class="row between">${badge(e)}${canEdit(e)?`<a class="btn sec" href="#edit/${esc(e.id)}">Bearbeiten</a>`:''}</div>
+    <h2 style="margin-top:8px">${esc(e.title)}</h2>
+    <div class="chips"><span class="chip">🗓 ${esc(fmt(e))}</span>${e.location?`<span class="chip">📍 ${esc(e.location)}</span>`:''}
+      ${e.deadline?`<span class="chip ${closed(e)?'danger':''}">${closed(e)?'🔒 Anmeldung geschlossen seit':'⏰ Anmeldung bis'} ${esc(fmtDT(e.deadline))}</span>`:''}
+      ${capChip(e)}${evArchived(e)?'<span class="chip">📦 Im Archiv</span>':''}</div>
+    ${e.desc?`<p class="desc">${esc(e.desc)}</p>`:''}${gallery(mediaOf('event_id',e.id))}</div>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));align-items:start">
+  <form id="pf" class="card" style="margin:0"><h3>${forUser===me.id?'Deine Teilnahme':'Teilnahme von '+esc(userById(forUser)?.name)}</h3>
+    ${mgr?`<label>Eintragen für<select name="for">${db.users.map(u=>`<option value="${esc(u.id)}" ${u.id===forUser?'selected':''}>${esc(u.name)}</option>`).join('')}</select></label>`:''}
+    ${parts[forUser]?`<div>${byText(parts[forUser],forUser)}</div>`:''}
+    ${locked?'<div class="notice">🔒 Anmeldeschluss vorbei – Änderungen nur noch über einen Organisator.</div>':''}
+    ${noYes?'<div class="notice">🔒 Ausgebucht – keine weiteren Zusagen möglich.</div>':''}
+    <fieldset ${locked?'disabled':''}>
+      <fieldset><legend>Bist du dabei?</legend>${seg('status',{ja:'✅ Dabei',...(feat('maybe')||p.status==='vielleicht'?{vielleicht:'❔ Vielleicht'}:{}),nein:'❌ Nein'},p.status)}</fieldset>
+      ${t.rides?`<fieldset data-ja><legend>Anreise</legend>${seg('ride',RIDE,p.ride)}</fieldset>
+      <label data-drive>Freie Plätze (ohne Fahrer)<input type="number" name="seats" min="1" max="50" value="${p.seats||3}"></label>
+      <label data-need>Mitfahren bei<select name="with"><option value="">– noch offen –</option>${drivers.map(u=>{const f=free(parts,u.id,forUser);
+        return `<option value="${esc(u.id)}" ${p.with===u.id?'selected':''} ${f<1&&p.with!==u.id?'disabled':''}>${esc(u.name)} (${f} frei)</option>`}).join('')}</select></label>`:''}
+      <label>Notiz<input name="note" maxlength="200" value="${esc(p.note)}" placeholder="optional"></label>
+      <div style="margin-top:14px"><button>Speichern</button></div>
+    </fieldset><p class="err" id="err"></p></form>
+  <div>
+    ${invBlock}<div class="card"><h3>Teilnehmer</h3>${people||'<p class="muted">Keine Teilnehmer sichtbar.</p>'}</div>
+    ${t.rides&&can('view.yes')?`<div class="card"><h3>Fahrgemeinschaften</h3>
+      ${db.users.filter(u=>ok(u)&&parts[u.id].ride==='drive').map(u=>{const r=db.users.filter(x=>ok(x)&&parts[x.id].with===u.id);
+        return `<div class="item"><div><b>🚗 ${esc(u.name)}</b><div class="muted small">${r.map(x=>esc(x.name)).join(', ')||'noch niemand'}</div></div><span class="chip">${free(parts,u.id)} frei</span></div>`}).join('')||'<p class="muted">Noch keine Fahrer.</p>'}
+      ${open.length?`<div class="notice">🙋 Suchen noch Mitfahrt: ${open.map(u=>esc(u.name)).join(', ')}</div>`:''}</div>`:''}
+  </div></div>`;
+  const f=$('#pf'), el=f.elements;
+  const sync=()=>{if(!t.rides)return;const st=el.status.value, r=el.ride.value;
+    f.querySelector('[data-ja]').hidden=st!=='ja';
+    f.querySelector('[data-drive]').hidden=!(st==='ja'&&r==='drive');
+    f.querySelector('[data-need]').hidden=!(st==='ja'&&r==='need')};
+  sync();
+  f.onchange=ev=>ev.target.name==='for'?viewEvent(id,ev.target.value):sync();
+  f.onsubmit=ev=>{ev.preventDefault();saveParticipation(id,mgr?el.for.value:me.id,el,f.querySelector('button'))};
+}
+async function saveParticipation(evId,userId,el,btn){
+  btn.disabled=true;
+  try{
+    const {error}=await sb.from('parts').upsert({event_id:evId,user_id:userId,status:el.status.value,ride:el.ride?.value||'self',
+      seats:parseInt(el.seats?.value,10)||0,with_id:el.with?.value||null,note:el.note.value.trim()||null});
+    if(error)return showErr(error.message);  // Kapazitäts-/Fristfehler kommen vom Trigger
+    await loadAll();viewEvent(evId,userId);
+  }catch(e){showErr(e.message)}finally{btn.disabled=false}
+}
+
+function viewEdit(id){
+  const e=db.events.find(x=>x.id===id)||{id:'',title:'',type_id:db.types[0]?.id||'',date:'',time:'',location:'',desc:'',deadline:null};
+  const pics=mediaOf('event_id',e.id), myInv=db.invites.filter(x=>x.event_id===e.id);
+  app.innerHTML=`<a href="#${e.id?'event/'+esc(e.id):'events'}" class="back">${e.id?'Zum Termin':'Alle Termine'}</a><form id="ef" class="card narrow"><h2>${e.id?'Termin bearbeiten':'Neuer Termin'}</h2>
+    <label>Titel<input name="title" required maxlength="100" value="${esc(e.title)}"></label>
+    <label>Art<select name="type_id"><option value="">Ohne Art</option>${db.types.map(t=>`<option value="${esc(t.id)}" ${e.type_id===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}</select></label>
+    <div class="row"><label>Datum<input type="date" name="date" required value="${esc(e.date)}"></label><label>Uhrzeit<input type="time" name="time" value="${esc(e.time)}"></label></div>
+    <div class="row"><label>Anmeldeschluss (optional)<input type="datetime-local" name="deadline" value="${e.deadline?esc(toLocalInput(e.deadline)):''}"></label>
+      <label>Max. Teilnehmer (optional)<input type="number" name="max" min="1" max="10000" value="${e.max_parts??''}" placeholder="unbegrenzt"></label></div>
+    ${e.id?sw('arch','1','📦 Im Archiv (taucht nur noch unter „Archiv" auf)',!!e.archived_at):''}
+    ${feat('invites')?`<details style="margin-top:14px" ${myInv.length?'open':''}><summary style="cursor:pointer;font-weight:600;font-size:14px">
+      🎯 Angefragt${myInv.length?` (${myInv.length})`:''} <span class="muted" style="font-weight:400">– optional, wenn du von bestimmten Personen eine Antwort erwartest</span></summary>
+      <p class="muted small" style="margin:6px 0 0">Der Termin bleibt für alle sichtbar. Hier legst du fest, wessen Antwort du erwartest.</p>
+      <h4>Gruppen</h4>${picker('ig',db.groups,myInv.filter(x=>x.group_id).map(x=>x.group_id))}
+      <h4>Einzelne Personen</h4>${picker('iu',db.users,myInv.filter(x=>x.user_id&&!x.exclude).map(x=>x.user_id))}
+      ${exHtml('ix')}
+    </details>`:''}
+    <label>Ort / Treffpunkt<input name="location" maxlength="150" value="${esc(e.location)}"></label>
+    <label>Beschreibung<textarea name="desc" rows="4" maxlength="2000">${esc(e.desc)}</textarea></label>
+    ${mediaField(pics,MAX_MEDIA-pics.length)}
+    <div class="row between" style="margin-top:16px"><button>Speichern</button>${e.id?'<button type="button" class="danger" id="del">Löschen</button>':''}</div><p class="err" id="err"></p></form>`;
+  const f=$('#ef');
+  exPick(f,'ig','iu','ix',myInv.filter(x=>x.exclude).map(x=>x.user_id));
+  f.onclick=async ev=>{const b=ev.target.closest('[data-mdel]');if(!b)return;
+    const {error}=await sb.from('media').delete().eq('id',b.dataset.mdel);
+    if(error)return showErr(error.message);
+    db.media=db.media.filter(m=>m.id!==b.dataset.mdel); viewEdit(id)};
+  bindPics(f,MAX_MEDIA-pics.length,showErr);
+  f.onsubmit=async ev=>{ev.preventDefault();const v=Object.fromEntries(new FormData(f));
+    const row={title:v.title.trim(),type_id:v.type_id||null,date:v.date,time:v.time||null,deadline:v.deadline?new Date(v.deadline).toISOString():null,
+      location:v.location.trim()||null,descr:v.desc.trim()||null};
+    // nur mitschicken, wenn genutzt – sonst scheitert jedes Speichern, solange 017 fehlt
+    if(v.max||e.max_parts!=null)row.max_parts=v.max?parseInt(v.max,10):null;
+    if(e.id)row.archived_at=f.elements.arch.checked?(e.archived_at||new Date().toISOString()):null;
+    const q=e.id?sb.from('events').update(row).eq('id',e.id):sb.from('events').insert(row);  // created_by setzt die DB
+    const {data,error}=await q.select().single();
+    if(error)return showErr(error.message);
+    // Anfragen nur ändern, wo sich etwas geändert hat – sonst schreibt jedes Speichern Löschungen ins Log
+    const fd=new FormData(f);
+    const want=[...fd.getAll('ig').map(g=>({event_id:data.id,group_id:g,user_id:null})),
+                ...fd.getAll('iu').map(u=>({event_id:data.id,group_id:null,user_id:u})),
+                ...fd.getAll('ix').map(u=>({event_id:data.id,group_id:null,user_id:u,exclude:true}))];
+    const key=x=>(x.group_id||'')+'|'+(x.user_id||'')+'|'+!!x.exclude;
+    const haveK=new Set(myInv.map(key)), wantK=new Set(want.map(key));
+    for(const x of myInv.filter(x=>!wantK.has(key(x)))){
+      const dq=sb.from('event_invites').delete().eq('event_id',data.id);
+      const {error}=await (x.group_id?dq.eq('group_id',x.group_id):dq.eq('user_id',x.user_id));
+      if(error)return showErr(error.message);
+    }
+    const add=want.filter(x=>!haveK.has(key(x)));
+    if(add.length){const {error}=await sb.from('event_invites').insert(add);if(error)return showErr(error.message)}
+    const files=[...(f.elements.pics?.files||[])];
+    if(files.length){
+      if(files.length>MAX_MEDIA-pics.length)return showErr(`Höchstens ${MAX_MEDIA} Bilder pro Termin.`);
+      const up=await uploadMedia(files,'event_id',data.id,pics.length);
+      if(up.err)return showErr(up.err);
+    }
+    location.hash=e.id?'event/'+data.id:'events';};   // neu angelegt -> zurück in die Übersicht
+  if(e.id)$('#del').onclick=async()=>{if(!confirm(`"${e.title}" mit allen Zusagen löschen?`))return;
+    const {error}=await sb.from('events').delete().eq('id',e.id);if(error)return showErr(error.message);location.hash='events'};
+}
+
+// ---------- Pinnwand ----------
+function audienceText(p){
+  if(p.audience==='all')return '<span class="chip">👥 Alle</span>';
+  const ts=db.targets.filter(t=>t.post_id===p.id);
+  const names=ts.map(t=>t.group_id?'👪 '+(groupById(t.group_id)?.name||'?'):(t.exclude?'🚫 ohne ':'👤 ')+(userById(t.user_id)?.name||'?'));
+  return names.length?names.map(n=>`<span class="chip">${esc(n)}</span>`).join(''):'<span class="chip warn">nur für dich sichtbar (keine Zielgruppe gewählt)</span>';
+}
+function pollHtml(p){
+  const q=db.polls[p.id]; if(!q)return '';
+  const os=db.pollOpts.filter(o=>o.post_id===p.id);
+  const done=pollClosed(q), mine=os.filter(o=>db.myVotes.includes(o.id)).map(o=>o.id);
+  const max=Math.max(1,...os.map(o=>db.results[o.id]?.n||0));
+  const voters=o=>{const v=db.results[o.id]?.voters;return v?v.map(u=>userById(u)?.name||'?').join(', '):''};
+  const kindText={single:'Eine Antwort',multi:'Mehrfachauswahl',dates:'Terminfindung (mehrere möglich)'}[q.kind];
+  const res=os.map(o=>{const n=db.results[o.id]?.n||0, v=voters(o);
+    return `<div class="bar"><i style="width:${Math.round(n/max*100)}%"></i><span><b>${esc(optText(o))}</b><span>${n}</span></span>
+      ${v?`<div class="muted small" style="position:relative;z-index:1">${esc(v)}</div>`:''}</div>`}).join('');
+  const form=done?'':`<form data-poll="${esc(p.id)}">${os.map(o=>`<label class="check" style="margin-top:8px">
+      <input type="${q.kind==='single'?'radio':'checkbox'}" name="o" value="${esc(o.id)}" ${mine.includes(o.id)?'checked':''}> ${esc(optText(o))}</label>`).join('')}
+    <div class="row" style="margin-top:12px"><button>${mine.length?'Antwort ändern':'Abstimmen'}</button>
+      ${mine.length?'<button type="button" class="sec" data-clear>Stimme zurückziehen</button>':''}</div></form>`;
+  return `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+    <div class="row between"><h4 style="margin:0">📊 Umfrage</h4><span class="muted small">${kindText}${q.anon?' · anonym':''}</span></div>
+    ${q.closes_at?`<div class="chips"><span class="chip ${done?'danger':''}">${done?'🔒 beendet am':'⏰ läuft bis'} ${esc(fmtDT(q.closes_at))}</span></div>`:''}
+    ${form}
+    <h4>Ergebnis${q.anon?' <span class="muted small" style="font-weight:400">(anonym – ohne Namen)</span>':''}</h4>${res||'<p class="muted small">Noch keine Optionen.</p>'}</div>`;
+}
+function postCard(p){
+  const my=db.reactions.find(r=>r.post_id===p.id&&r.user_id===me.id);
+  const cnt=e=>db.reactions.filter(r=>r.post_id===p.id&&r.emoji===e).length;
+  const readers=db.reads.filter(r=>r.post_id===p.id);
+  const q=db.polls[p.id], open=q&&!pollClosed(q)&&!db.pollOpts.some(o=>o.post_id===p.id&&db.myVotes.includes(o.id));
+  return `<div class="card post ${isRead(p.id)?'':'unread'}" data-post="${esc(p.id)}">
+    <div class="row between"><div class="chips" style="margin:0">${p.pinned?'<span class="chip">📌 Angepinnt</span>':''}${postArchived(p)?'<span class="chip">📦 Archiv</span>':''}${audienceText(p)}
+      ${open?'<span class="chip warn">🗳 Abstimmung offen</span>':''}</div>
+      ${canEditPost(p)?`<details class="menu"><summary aria-label="Aktionen">⋮</summary><div>
+        <button type="button" data-pedit="${esc(p.id)}">✏️ Bearbeiten</button>
+        <button type="button" data-ppin="${esc(p.id)}">${p.pinned?'📌 Loslösen':'📌 Anpinnen'}</button>
+        <button type="button" data-parch="${esc(p.id)}">${p.archived_at?'📤 Aus dem Archiv':'📦 Ins Archiv'}</button>
+        <button type="button" class="del" data-pdel="${esc(p.id)}">🗑 Löschen</button></div></details>`:''}</div>
+    <h3 style="margin-top:8px">${esc(p.title)}</h3>
+    <div class="by">${esc(userById(p.created_by)?.name||'Unbekannt')} · ${esc(fmtDT(p.created_at))}</div>
+    ${p.body?`<p class="desc">${esc(p.body)}</p>`:''}${gallery(mediaOf('post_id',p.id))}
+    ${pollHtml(p)}
+    <div class="rx">${feat('reactions')?EMOJI.map(e=>{const n=cnt(e);return `<button type="button" data-rx="${esc(p.id)}" data-e="${e}" class="${my?.emoji===e?'on':''}">${e}${n?' '+n:''}</button>`}).join(''):''}
+      ${feat('reads')&&can('reads.view')?`<span class="muted small" style="margin-left:auto" title="${esc(readers.map(r=>userById(r.user_id)?.name||'?').join(', '))}">👁 ${readers.length} gelesen</span>`:''}</div></div>`;
+}
+function viewBoard(){
+  const chip=(n,l,on)=>`<label><input type="checkbox" name="${n}" ${on?'checked':''}>${l}</label>`;
+  app.innerHTML=`<div class="head"><h2>Pinnwand</h2>${can('posts.create')?'<a class="btn" href="#post/new">+ Neuer Beitrag</a>':''}</div>
+    <form id="bflt" class="filters card" onsubmit="return false">
+      <label>Suche<input name="q" value="${esc(bflt.q)}" placeholder="Titel, Text …" type="search"></label>
+      <fieldset><legend>Anzeigen</legend><div class="seg">
+        ${chip('unread','🔵 Nur ungelesene',bflt.unread)}${chip('open','🗳 Umfrage offen',bflt.open)}${chip('archive','📦 Archiv',bflt.archive)}
+      </div></fieldset></form>
+    <p class="cnt" id="bcnt"></p><p class="err" id="err"></p><div id="blist"></div>`;
+  const draw=()=>{
+    const q=bflt.q.toLowerCase();
+    const posts=db.posts.filter(p=>{
+      const arch=postArchived(p), poll=db.polls[p.id];
+      const open=poll&&!pollClosed(poll)&&!db.pollOpts.some(o=>o.post_id===p.id&&db.myVotes.includes(o.id));
+      return (bflt.archive?arch:!arch)&&(!bflt.unread||!isRead(p.id))&&(!bflt.open||open)
+        &&hits(`${p.title} ${p.body||''}`,q);
+    }).sort((a,b)=>(b.pinned-a.pinned)||(a.created_at<b.created_at?1:-1));
+    $('#bcnt').textContent=posts.length===db.posts.length?`${posts.length} ${posts.length===1?'Beitrag':'Beiträge'}`:`${posts.length} von ${db.posts.length} Beiträgen`;
+    $('#blist').innerHTML=posts.map(postCard).join('')||'<div class="card muted">Keine passenden Beiträge.</div>';
+    markSeen();
+  };
+  $('#bflt').oninput=ev=>{const t=ev.target;bflt[t.name]=t.type==='checkbox'?t.checked:t.value;draw()};
+  draw();
+  app.onclick=async ev=>{
+    const rx=ev.target.closest('button[data-rx]');
+    if(rx)return react(rx.dataset.rx,rx.dataset.e);
+    const b=ev.target.closest('button[data-pedit],button[data-ppin],button[data-parch],button[data-pdel],button[data-clear]');
+    if(!b)return;
+    if(b.dataset.pedit)return location.hash='post/'+b.dataset.pedit;
+    if(b.dataset.ppin){const p=db.posts.find(x=>x.id===b.dataset.ppin);
+      const {error}=await sb.from('posts').update({pinned:!p.pinned}).eq('id',p.id);
+      return error?showErr(error.message):render()}
+    if(b.dataset.parch){const p=db.posts.find(x=>x.id===b.dataset.parch);
+      const {error}=await sb.from('posts').update({archived_at:p.archived_at?null:new Date().toISOString()}).eq('id',p.id);
+      return error?showErr(error.message):render()}
+    if(b.dataset.pdel){if(!confirm('Beitrag mit allen Stimmen und Reaktionen löschen?'))return;
+      const {error}=await sb.from('posts').delete().eq('id',b.dataset.pdel);
+      return error?showErr(error.message):render()}
+    if(b.hasAttribute('data-clear'))return saveVote(b.closest('form').dataset.poll,[],b);
+  };
+  app.onsubmit=ev=>{const f=ev.target.closest('form[data-poll]');if(!f)return;ev.preventDefault();
+    saveVote(f.dataset.poll,[...f.querySelectorAll('[name=o]:checked')].map(i=>i.value),f.querySelector('button'))};
+}
+// Gelesen heißt: war wirklich im Blickfeld. Sonst wäre mit der Pinnwand als Startseite
+// sofort alles gelesen und der Zähler am Reiter wertlos.
+function markSeen(){
+  const els=[...app.querySelectorAll('[data-post]')].filter(el=>!isRead(el.dataset.post));
+  if(!els.length)return;
+  if(!('IntersectionObserver' in window))return markRead(els.map(el=>el.dataset.post));
+  const io=new IntersectionObserver(es=>{
+    const seen=es.filter(e=>e.isIntersecting);
+    if(!seen.length)return;
+    seen.forEach(e=>io.unobserve(e.target));
+    markRead(seen.map(e=>e.target.dataset.post));
+  },{threshold:.4});
+  els.forEach(el=>io.observe(el));
+}
+async function markRead(ids){
+  const todo=ids.filter(id=>!isRead(id));
+  if(!todo.length)return;
+  const {error}=await sb.from('post_reads').upsert(todo.map(id=>({post_id:id,user_id:me.id})));
+  if(error)return;  // nicht kritisch – nur der Gelesen-Zähler
+  db.reads.push(...todo.map(id=>({post_id:id,user_id:me.id})));
+  drawNav();
+}
+async function react(postId,emoji){
+  const cur=db.reactions.find(r=>r.post_id===postId&&r.user_id===me.id);
+  const {error}=cur&&cur.emoji===emoji
+    ? await sb.from('post_reactions').delete().eq('post_id',postId).eq('user_id',me.id)
+    : await sb.from('post_reactions').upsert({post_id:postId,user_id:me.id,emoji});
+  if(error)return showErr(error.message);
+  await loadBoard();viewBoard();
+}
+async function saveVote(postId,ids,btn){
+  btn.disabled=true;
+  try{
+    const all=db.pollOpts.filter(o=>o.post_id===postId).map(o=>o.id);
+    // erst eigene Stimmen weg, dann neu – die Frist prüft der DB-Trigger
+    const {error:e1}=await sb.from('votes').delete().eq('user_id',me.id).in('option_id',all);
+    if(e1)return showErr(e1.message);
+    if(ids.length){const {error}=await sb.from('votes').insert(ids.map(id=>({option_id:id,user_id:me.id})));
+      if(error)return showErr(error.message)}
+    await loadBoard();viewBoard();
+  }finally{btn.disabled=false}
+}
+
+// ---------- Beitrag anlegen / bearbeiten ----------
+function optRow(kind,o){
+  o=o||{};
+  return `<div class="row" data-opt data-id="${esc(o.id||'')}" style="flex-wrap:nowrap;margin-top:6px">
+    ${kind==='dates'?`<input type="datetime-local" name="oat" value="${o.at?esc(toLocalInput(o.at)):''}" required>`
+                    :`<input name="olabel" maxlength="120" value="${esc(o.label||'')}" placeholder="Antwort" required>`}
+    <button type="button" class="sec" data-rm aria-label="Option entfernen">✕</button></div>`;
+}
+function viewPostEdit(id){
+  const p=db.posts.find(x=>x.id===id)||{id:'',title:'',body:'',audience:'all',pinned:false};
+  const q=db.polls[p.id]||null, os=db.pollOpts.filter(o=>o.post_id===p.id);
+  const tg=db.targets.filter(t=>t.post_id===p.id), pics=mediaOf('post_id',p.id);
+  const pick=picker;
+  const seg=(name,obj,val)=>`<div class="seg">${Object.entries(obj).map(([k,v])=>
+    `<label><input type="radio" name="${name}" value="${k}" ${val===k?'checked':''}>${v}</label>`).join('')}</div>`;
+  app.innerHTML=`<a href="#board" class="back">Pinnwand</a>
+  <form id="pe" class="card narrow"><h2>${p.id?'Beitrag bearbeiten':'Neuer Beitrag'}</h2>
+    <label>Titel<input name="title" required maxlength="100" value="${esc(p.title)}"></label>
+    <label>Text<textarea name="body" rows="5" maxlength="4000">${esc(p.body||'')}</textarea></label>
+    <fieldset><legend>Wer soll das sehen?</legend>${seg('audience',{all:'Alle',some:'Nur bestimmte'},p.audience)}</fieldset>
+    <div data-some hidden>
+      <h4>Gruppen</h4>${pick('g',db.groups,tg.filter(t=>t.group_id).map(t=>t.group_id))}
+      <h4>Einzelne Personen</h4>${pick('u',db.users,tg.filter(t=>t.user_id&&!t.exclude).map(t=>t.user_id))}
+      ${exHtml('x')}
+    </div>
+    ${mediaField(pics,MAX_MEDIA-pics.length)}
+    ${feat('polls')&&can('polls.create')?`<fieldset style="margin-top:18px;border-top:1px solid var(--line);padding-top:6px">
+      ${sw('poll','1','📊 Umfrage anhängen',!!q)}
+      <div data-poll hidden>
+        <fieldset><legend>Art</legend>${seg('kind',{single:'Eine Antwort',multi:'Mehrfachauswahl',dates:'Terminfindung'},q?.kind||'single')}</fieldset>
+        ${sw('anon','1','Anonym (niemand sieht, wer was gewählt hat)',!!q?.anon)}
+        <label>Frist (optional)<input type="datetime-local" name="closes_at" value="${q?.closes_at?esc(toLocalInput(q.closes_at)):''}"></label>
+        <h4>Optionen</h4><div id="opts"></div>
+        <button type="button" class="sec" id="addopt" style="margin-top:8px">+ Option</button>
+      </div></fieldset>`:''}
+    <div class="row between" style="margin-top:18px"><button>Speichern</button>
+      ${p.id?'<button type="button" class="danger" id="pdel">Löschen</button>':''}</div><p class="err" id="err"></p></form>`;
+  const f=$('#pe'), el=f.elements;
+  exPick(f,'g','u','x',tg.filter(t=>t.exclude).map(t=>t.user_id));
+  let kind=q?.kind||'single';
+  const drawOpts=()=>{const box=$('#opts');if(!box)return;
+    const cur=[...box.querySelectorAll('[data-opt]')].map(r=>({id:r.dataset.id,label:r.querySelector('[name=olabel]')?.value,
+      at:r.querySelector('[name=oat]')?.value?new Date(r.querySelector('[name=oat]').value).toISOString():null}));
+    const src=cur.length?cur:(os.length?os:[{},{}]);
+    box.innerHTML=src.map(o=>optRow(kind,o)).join('')};
+  const sync=()=>{
+    f.querySelector('[data-some]').hidden=el.audience.value==='all';
+    const pb=f.querySelector('[data-poll]');
+    if(pb){pb.hidden=!el.poll.checked;
+      // versteckte Pflichtfelder abschalten – sonst blockiert der Browser das Absenden unsichtbar
+      pb.querySelectorAll('input').forEach(i=>i.disabled=pb.hidden);
+      const k=[...f.querySelectorAll('[name=kind]')].find(i=>i.checked)?.value||'single';
+      if(k!==kind){const was=kind;kind=k;
+        if(was==='dates'||k==='dates')$('#opts').innerHTML=[{},{}].map(o=>optRow(kind,o)).join('');
+        else drawOpts();
+        pb.querySelectorAll('input').forEach(i=>i.disabled=pb.hidden)}}};
+  if($('#opts'))$('#opts').innerHTML=(os.length?os:[{},{}]).map(o=>optRow(kind,o)).join('');
+  bindPics(f,MAX_MEDIA-pics.length,showErr);
+  sync();
+  f.onchange=sync;
+  f.onclick=async ev=>{
+    if(ev.target.closest('#addopt')){$('#opts').insertAdjacentHTML('beforeend',optRow(kind,{}));return sync()}
+    const md=ev.target.closest('[data-mdel]');
+    if(md){const {error}=await sb.from('media').delete().eq('id',md.dataset.mdel);
+      if(error)return showErr(error.message);
+      db.media=db.media.filter(m=>m.id!==md.dataset.mdel); return viewPostEdit(id)}
+    const rm=ev.target.closest('[data-rm]');
+    if(rm&&$('#opts').querySelectorAll('[data-opt]').length>1)rm.closest('[data-opt]').remove()};
+  f.onsubmit=ev=>{ev.preventDefault();savePost(p,q,os,f,kind,pics)};
+  if(p.id)$('#pdel').onclick=async()=>{if(!confirm('Beitrag mit allen Stimmen und Reaktionen löschen?'))return;
+    const {error}=await sb.from('posts').delete().eq('id',p.id);
+    if(error)return showErr(error.message);location.hash='board'};
+}
+async function savePost(p,oldPoll,oldOpts,f,kind,pics){
+  const btn=f.querySelector('button:not([type])');btn.disabled=true;
+  try{
+    const el=f.elements, fd=new FormData(f);
+    const audience=el.audience.value;
+    const gs=fd.getAll('g'), us=fd.getAll('u');
+    if(audience==='some'&&!gs.length&&!us.length)return showErr('Bitte mindestens eine Gruppe oder Person wählen.');
+    const wantPoll=!!el.poll?.checked;
+    let opts=[];
+    if(wantPoll){
+      opts=[...f.querySelectorAll('#opts [data-opt]')].map((r,i)=>({
+        id:r.dataset.id||null, pos:i,
+        label:kind==='dates'?null:r.querySelector('[name=olabel]').value.trim(),
+        at:kind==='dates'?new Date(r.querySelector('[name=oat]').value).toISOString():null}));
+      if(opts.length<2||opts.some(o=>!o.label&&!o.at))return showErr('Eine Umfrage braucht mindestens 2 ausgefüllte Optionen.');
+    }
+    const row={title:el.title.value.trim(),body:el.body.value.trim()||null,audience};
+    const {data,error}=p.id?await sb.from('posts').update(row).eq('id',p.id).select().single()
+                           :await sb.from('posts').insert(row).select().single();
+    if(error)return showErr(error.message);
+    const id=data.id;
+
+    const files=[...(f.elements.pics?.files||[])];
+    if(files.length){
+      if(files.length>MAX_MEDIA-pics.length)return showErr(`Höchstens ${MAX_MEDIA} Bilder pro Beitrag.`);
+      const up=await uploadMedia(files,'post_id',id,pics.length);
+      if(up.err)return showErr(up.err);
+    }
+    await sb.from('post_targets').delete().eq('post_id',id);
+    if(audience==='some'){
+      const {error}=await sb.from('post_targets').insert(
+        gs.map(g=>({post_id:id,group_id:g})).concat(us.map(u=>({post_id:id,user_id:u})),
+          fd.getAll('x').map(u=>({post_id:id,user_id:u,exclude:true}))));
+      if(error)return showErr(error.message);
+    }
+
+    if(!wantPoll){
+      if(oldPoll&&!confirm('Die angehängte Umfrage wird mit allen Stimmen gelöscht. Weiter?')){btn.disabled=false;return}
+      if(oldPoll)await sb.from('polls').delete().eq('post_id',id);
+    }else{
+      const pr={post_id:id,kind,anon:!!el.anon.checked,
+        closes_at:el.closes_at.value?new Date(el.closes_at.value).toISOString():null};
+      const {error:e1}=await sb.from('polls').upsert(pr);
+      if(e1)return showErr(e1.message);
+      const keep=opts.filter(o=>o.id).map(o=>o.id);
+      const gone=oldOpts.filter(o=>!keep.includes(o.id)).map(o=>o.id);
+      if(gone.length){const {error}=await sb.from('poll_options').delete().in('id',gone);if(error)return showErr(error.message)}
+      for(const o of opts){
+        const r={post_id:id,label:o.label,at:o.at,pos:o.pos};
+        const {error}=o.id?await sb.from('poll_options').update(r).eq('id',o.id)
+                          :await sb.from('poll_options').insert(r);
+        if(error)return showErr(error.message);
+      }
+    }
+    location.hash='board';
+  }finally{btn.disabled=false}
+}
+
+// ---------- Vorschläge ----------
+// Der Name kommt nur mit, wenn der Einreicher ihn freigegeben hat (ideas_list() blendet ihn sonst aus).
+function ideaCard(i){
+  const mgr=can('ideas.manage');
+  const who=i.author?esc(userById(i.author)?.name||'Unbekannt')
+           :`<span class="muted">🕶 Anonym${i.own?' · von dir':''}</span>`;
+  const fresh=i.status==='neu'&&Date.now()-new Date(i.created_at)<7*864e5;
+  return `<div class="card ${fresh?'fresh':''}">
+    <div class="row between"><div class="chips" style="margin:0"><span class="chip">${IST[i.status]||esc(i.status)}</span>
+      ${i.own?'<span class="chip">deiner</span>':''}</div>
+      ${mgr||(i.own&&i.status==='neu')?`<details class="menu"><summary aria-label="Aktionen">⋮</summary><div>
+        ${mgr?`<button type="button" data-iedit="${esc(i.id)}">✏️ Bearbeiten / antworten</button>`:''}
+        ${i.own&&i.status==='neu'?`<button type="button" data-iown="${esc(i.id)}">✏️ Meinen Vorschlag ändern</button>`:''}
+        <button type="button" class="del" data-idel="${esc(i.id)}">🗑 Löschen</button></div></details>`:''}</div>
+    <h3 style="margin-top:8px">${esc(i.title)}</h3>
+    <div class="by">${who} · ${esc(fmtDT(i.created_at))}</div>
+    ${i.body?`<p class="desc">${esc(i.body)}</p>`:''}
+    ${i.reply?`<div class="notice" style="background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)">
+      <b>Antwort:</b> ${esc(i.reply)} <span class="by">– ${i.handled_by?esc(userById(i.handled_by)?.name||''):'🕶 Anonym'}</span></div>`:''}
+    <div class="rx"><button type="button" data-ivote="${esc(i.id)}" class="${i.voted?'on':''}">👍 ${i.votes||0}</button>
+      <span class="muted small">${i.votes==1?'eine Stimme':`${i.votes||0} Stimmen`}</span></div></div>`;
+}
+function viewIdeas(){
+  const chip=(n,v,l,hidden)=>`<label><input type="checkbox" name="${n}" value="${esc(v)}" ${hidden.includes(v)?'':'checked'}>${l}</label>`;
+  app.innerHTML=`<div class="head"><h2>Vorschläge</h2><button id="inew">+ Vorschlag einreichen</button></div>
+    <form id="iflt" class="filters card" onsubmit="return false">
+      <label>Suche<input name="q" value="${esc(iflt.q)}" placeholder="Titel, Text …" type="search"></label>
+      <fieldset><legend>Stand <span style="font-weight:400">– abwählen blendet aus</span></legend>
+        <div class="seg multi">${Object.entries(IST).map(([k,l])=>chip('st',k,l,iflt.hideSt)).join('')}</div></fieldset>
+      <fieldset><legend>Anzeigen</legend><div class="seg">
+        <label><input type="checkbox" name="mine" ${iflt.mine?'checked':''}>🙋 Nur meine</label></div></fieldset>
+    </form><p class="cnt" id="icnt"></p><p class="err" id="err"></p><div id="ilist"></div>`;
+  const draw=()=>{
+    const q=iflt.q.toLowerCase();
+    const list=db.ideas.filter(i=>!iflt.hideSt.includes(i.status)&&(!iflt.mine||i.own)
+        &&hits(`${i.title} ${i.body||''}`,q))
+      .sort((a,b)=>(b.votes-a.votes)||(a.created_at<b.created_at?1:-1));
+    $('#icnt').textContent=db.ideas.length
+      ? (list.length===db.ideas.length?`${list.length} Vorschläge · ${db.ideas.filter(i=>i.status==='neu').length} noch offen`
+                                      :`${list.length} von ${db.ideas.length} Vorschlägen`)
+      : 'Noch keine Vorschläge – trau dich.';
+    $('#ilist').innerHTML=list.map(ideaCard).join('')
+      ||(db.ideas.length?'<div class="card muted">Keine passenden Vorschläge – prüf mal die Filter oben.</div>':'');
+  };
+  $('#iflt').oninput=ev=>{
+    const n=ev.target.name;
+    if(n==='st')iflt.hideSt=[...$('#iflt').querySelectorAll('[name=st]:not(:checked)')].map(i=>i.value);
+    else if(n==='mine')iflt.mine=ev.target.checked;
+    else iflt[n]=ev.target.value;
+    store('iflt',JSON.stringify(iflt));draw();
+  };
+  draw();
+  $('#inew').onclick=()=>ideaDialog();
+  app.onclick=async ev=>{
+    const v=ev.target.closest('button[data-ivote]');
+    if(v)return voteIdea(v.dataset.ivote);
+    const b=ev.target.closest('button[data-iedit],button[data-iown],button[data-idel]');
+    if(!b)return;
+    const i=db.ideas.find(x=>x.id===(b.dataset.iedit||b.dataset.iown||b.dataset.idel));
+    if(b.dataset.iedit)return ideaDialog(i,true);
+    if(b.dataset.iown)return ideaDialog(i,false);
+    if(!confirm('Vorschlag löschen?'))return;
+    const {error}=await sb.rpc('idea_delete',{iid:i.id});
+    error?showErr(error.message):render();
+  };
+}
+async function voteIdea(id){
+  const i=db.ideas.find(x=>x.id===id);
+  const {error}=i.voted
+    ? await sb.from('idea_votes').delete().eq('idea_id',id).eq('user_id',me.id)
+    : await sb.from('idea_votes').insert({idea_id:id,user_id:me.id});
+  if(error)return showErr(error.message);
+  render();
+}
+function ideaDialog(i,asManager){
+  const neu=!i;
+  openDialog(asManager
+    ? `<h3>Vorschlag bearbeiten</h3>
+       <p class="muted small">${esc(i.title)}${i.author?' · von '+esc(userById(i.author)?.name||'?'):' · anonym eingereicht, auch für dich nicht auflösbar'}</p>
+       <label>Stand<select name="status">${opts(IST,i.status)}</select></label>
+       <label>Antwort an alle<textarea name="reply" rows="3" maxlength="1000" placeholder="Was passiert damit?">${esc(i.reply||'')}</textarea></label>
+       ${brand.reply_anon_allowed===false?'<p class="muted small">Antworten werden mit deinem Namen veröffentlicht.</p>'
+        :`${sw('rnamed','1','Meinen Namen an der Antwort zeigen',i.reply?!i.reply_anon:true)}
+          <p class="muted small" style="margin:4px 0 0">Ohne Namen kann niemand nachfragen – bei einer Ablehnung wirkt das schnell wie Ausweichen.</p>`}`
+    : `<h3>${neu?'Vorschlag einreichen':'Vorschlag ändern'}</h3>
+       <label>Worum geht es?<input name="title" required maxlength="100" value="${esc(i?.title)}" placeholder="Kurz und knapp"></label>
+       <label>Beschreibung<textarea name="body" rows="4" maxlength="2000" placeholder="Was genau, und warum?">${esc(i?.body||'')}</textarea></label>
+       ${sw('named','1','Meinen Namen anzeigen',i?!i.anon:false)}
+       <p class="muted small" style="margin:4px 0 0">Aus = der Vorschlag erscheint als „Anonym". Niemand sieht, von wem er ist – auch die Verwaltung nicht.</p>`,
+    async fd=>{
+      if(asManager){   // fremde Zeilen sind per RLS nicht les- und schreibbar, das macht die Funktion
+        const {error}=await sb.rpc('idea_handle',
+          {iid:i.id,st:fd.get('status'),rep:fd.get('reply'),
+           ranon:brand.reply_anon_allowed!==false&&!fd.has('rnamed')});
+        return error?.message;
+      }
+      const row={title:fd.get('title').trim(),body:fd.get('body').trim()||null,anon:!fd.has('named')};
+      const {error}=neu?await sb.from('ideas').insert(row):await sb.from('ideas').update(row).eq('id',i.id);
+      return error?.message;
+    });
+}
+
+// ---------- Verwaltung ----------
+const menu=(kind,id)=>`<details class="menu"><summary aria-label="Aktionen">⋮</summary><div>
+  <button type="button" data-edit="${kind}" data-id="${esc(id)}">✏️ Bearbeiten</button><button type="button" class="del" data-del="${kind}" data-id="${esc(id)}">🗑 Löschen</button></div></details>`;
+document.addEventListener('click',ev=>document.querySelectorAll('details.menu[open]').forEach(d=>{if(!d.contains(ev.target))d.open=false}));
+
+function openDialog(html,onSave){
+  dlg.innerHTML=`<form id="df">${html}<p class="err" id="derr"></p><div class="row end" style="margin-top:12px"><button type="button" class="sec" id="dcancel">Abbrechen</button><button>Speichern</button></div></form>`;
+  dlg.showModal();
+  $('#dcancel').onclick=()=>dlg.close();
+  $('#df').onsubmit=async ev=>{ev.preventDefault();const b=ev.submitter;b.disabled=true;
+    const err=await onSave(new FormData(ev.target));b.disabled=false;
+    if(err)$('#derr').textContent=de(err);else{dlg.close();render()}};
+}
+const sw=(name,value,label,on)=>`<label class="sw"><span>${label}</span><input type="checkbox" role="switch" name="${name}" value="${value}" ${on?'checked':''}></label>`;
+
+// Verwalter korrigieren Namen (auch die automatische Aufteilung aus Migration 016) und können Spitznamen entfernen
+function nameDialog(u){
+  openDialog(`<h3>Name ändern</h3><p class="muted small">${esc(u.email)}</p>
+    <div class="row"><label>Vorname<input name="fn" required maxlength="50" value="${esc(u.first_name??u.name)}"></label>
+      <label>Nachname<input name="ln" maxlength="50" value="${esc(u.last_name)}"></label></div>
+    <label>Spitzname<input name="nick" maxlength="30" value="${esc(u.nick)}" placeholder="keiner"></label>`,
+    async fd=>{const {error}=await sb.from('profiles').update({first_name:fd.get('fn').trim(),
+      last_name:fd.get('ln').trim()||null,nick:fd.get('nick').trim()||null}).eq('id',u.id);
+      return error?.message});
+}
+function rolesDialog(u){
+  const have=u.roles||[];
+  openDialog(`<h3>Rollen von ${esc(u.name)}</h3>
+    <p class="muted small">Die Rechte aller gewählten Rollen gelten zusammen. Keine Rolle = nicht freigegeben.</p>
+    ${db.roles.map(r=>{const ok=mayGrant(r);
+      return `<label class="sw"><span>${esc(r.name)}${ok?'':' <span class="muted small">– darfst du nicht vergeben</span>'}</span>
+        <input type="checkbox" role="switch" name="r" value="${esc(r.id)}" ${have.includes(r.id)?'checked':''} ${ok?'':'disabled'}></label>`}).join('')}`,
+    async fd=>{const want=fd.getAll('r');
+      // gesperrte Schalter fehlen in den Formulardaten – die gelten nicht als abgewählt
+      for(const id of have.filter(x=>!want.includes(x)&&roleById(x)&&mayGrant(roleById(x)))){
+        const {error}=await sb.from('profile_roles').delete().eq('user_id',u.id).eq('role_id',id); if(error)return error.message}
+      const add=want.filter(x=>!have.includes(x));
+      if(add.length){const {error}=await sb.from('profile_roles').insert(add.map(role_id=>({user_id:u.id,role_id})));
+        if(error)return error.message}
+    });
+}
+function roleDialog(r){
+  openDialog(`<h3>${r?'Rolle bearbeiten':'Neue Rolle'}</h3><label>Name<input name="name" required maxlength="40" value="${esc(r?.name)}"></label>
+    <h4>Freigabe</h4>${sw('appr','1','🔓 Darf von Freigebern vergeben werden',!!r?.approvable)}
+    <p class="muted small" style="margin:4px 0 0">Wer nur „Registrierungen freigeben" darf, kann ausschließlich so markierte Rollen vergeben und entziehen.</p>
+    <h4>Anmeldung</h4>${sw('mfa','1','🔐 Zwei-Faktor-Anmeldung erforderlich',!!r?.mfa_required)}
+    <p class="muted small" style="margin:4px 0 0">Wer diese Rolle hat, wird beim nächsten Aufruf zur Einrichtung gezwungen –
+      auch wer gerade angemeldet ist. Der Besitzer ist ausgenommen.</p>
+    ${PERM_GROUPS.map(([g,ps])=>{const on=Object.entries(ps).filter(([k])=>permOn(k));
+      return on.length?`<h4>${g}</h4>${on.map(([k,l])=>sw('perm',k,l,r?.perms.includes(k))
+        .replace('<input',me.is_owner||can(k)?'<input':'<input disabled title="Nur Rechte, die du selbst hast"')).join('')}`:''}).join('')}
+    ${me.is_owner?'':'<p class="muted small">Ausgegraut: Rechte, die du selbst nicht hast – die kann nur jemand vergeben, der sie hat.</p>'}
+    ${r?.perms.filter(k=>!permOn(k)).map(k=>`<input type="hidden" name="perm" value="${esc(k)}">`).join('')||''}`,
+    async fd=>{const row={name:fd.get('name').trim(),perms:fd.getAll('perm'),mfa_required:fd.has('mfa'),approvable:fd.has('appr')};
+      const {error}=r?await sb.from('roles').update(row).eq('id',r.id):await sb.from('roles').insert(row);return error?.message});
+}
+function typeDialog(t){
+  openDialog(`<h3>${t?'Termin-Art bearbeiten':'Neue Termin-Art'}</h3>
+    <div class="row"><label>Name<input name="name" required maxlength="40" value="${esc(t?.name)}"></label><label style="flex:0 0 90px;min-width:0">Farbe<input type="color" name="color" value="${esc(t?.color||'#4f46e5')}"></label></div>
+    <h4>Funktionen</h4>${sw('rides','1','Fahrgemeinschaften (Fahrer / Mitfahrer)',t?t.rides:true)}`,
+    async fd=>{const row={name:fd.get('name').trim(),color:fd.get('color'),rides:fd.has('rides')};
+      const {error}=t?await sb.from('event_types').update(row).eq('id',t.id):await sb.from('event_types').insert(row);return error?.message});
+}
+
+function groupDialog(g){
+  const mem=db.members.filter(m=>m.group_id===g?.id).map(m=>m.user_id);
+  openDialog(`<h3>${g?'Gruppe bearbeiten':'Neue Gruppe'}</h3><label>Name<input name="name" required maxlength="40" value="${esc(g?.name)}"></label>
+    <h4>Mitglieder</h4><div class="pickers">${db.users.map(u=>sw('m',u.id,esc(u.name),mem.includes(u.id))).join('')}</div>`,
+    async fd=>{
+      const name=fd.get('name').trim(), want=fd.getAll('m');
+      const r=g?await sb.from('groups').update({name}).eq('id',g.id).select().single()
+              :await sb.from('groups').insert({name}).select().single();
+      if(r.error)return r.error.message;
+      const id=r.data.id;
+      const del=mem.filter(u=>!want.includes(u)), add=want.filter(u=>!mem.includes(u));
+      if(del.length){const {error}=await sb.from('group_members').delete().eq('group_id',id).in('user_id',del);if(error)return error.message}
+      if(add.length){const {error}=await sb.from('group_members').insert(add.map(u=>({group_id:id,user_id:u})));if(error)return error.message}
+    });
+}
+async function tabGroups(){
+  const [g,m]=await Promise.all([sb.from('groups').select('*').order('name'),sb.from('group_members').select('*')]);
+  if(g.error||m.error)throw g.error||m.error;
+  db.groups=g.data; db.members=m.data;
+  const n=id=>db.members.filter(x=>x.group_id===id).length;
+  return {html:`<div class="card"><div class="row between"><p class="muted small" style="margin:0">Gruppen sind unabhängig von Rollen – eine Person kann in mehreren sein. Genutzt als Zielgruppe für Pinnwand-Beiträge.</p><button data-new="group">+ Neue Gruppe</button></div>
+    ${db.groups.map(x=>`<div class="item"><div><b>${esc(x.name)}</b><div class="muted small">${n(x.id)} ${n(x.id)===1?'Person':'Personen'}${n(x.id)?': '+esc(db.members.filter(y=>y.group_id===x.id).map(y=>userById(y.user_id)?.name||'?').join(', ')):''}</div></div>${menu('group',x.id)}</div>`).join('')||'<p class="muted">Noch keine Gruppen.</p>'}</div>`};
+}
+const MAX_MEDIA=10, MAX_MB=5;
+const mediaOf=(key,id)=>db.media.filter(m=>m[key]===id).sort((a,b)=>a.pos-b.pos);
+// Handyfotos sind 3–8 MB. Verkleinert landen ~300 KB im Speicher – das ist der eigentliche Hebel,
+// sonst ist das Supabase-Kontingent (1 GB Speicher, 5 GB Übertragung/Monat) schnell weg.
+async function shrink(file,max=1600,q=.82){
+  if(!file.type.startsWith('image/')||file.type==='image/svg+xml')return file;
+  let img;
+  try{img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(file)})}
+  catch(e){return file}
+  const sc=Math.min(1,max/Math.max(img.width,img.height));
+  if(sc===1&&file.size<700*1024){URL.revokeObjectURL(img.src);return file}
+  const c=document.createElement('canvas');
+  c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
+  c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  URL.revokeObjectURL(img.src);
+  const blob=await new Promise(res=>c.toBlob(res,'image/jpeg',q));
+  return blob||file;
+}
+async function uploadMedia(files,key,id,startPos){
+  const rows=[];
+  for(const f of files){
+    if(f.size>MAX_MB*1024*1024)return {err:`„${f.name}" ist größer als ${MAX_MB} MB.`};
+    const blob=await shrink(f);
+    const ext=blob.type==='image/jpeg'?'jpg':((f.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,5)||'jpg');
+    const path=`${id}/${Date.now()}-${rows.length}.${ext}`;
+    const up=await sb.storage.from('media').upload(path,blob,{contentType:blob.type||f.type||undefined});
+    if(up.error)return {err:up.error.message};
+    rows.push({[key]:id,url:sb.storage.from('media').getPublicUrl(path).data.publicUrl,pos:startPos+rows.length});
+  }
+  if(!rows.length)return {rows};
+  const {error}=await sb.from('media').insert(rows);
+  return error?{err:error.message}:{rows};
+}
+const picker=(name,list,sel)=>`<div class="pickers">${list.map(x=>
+  `<label class="sw"><span>${esc(x.name)}</span><input type="checkbox" role="switch" name="${name}" value="${esc(x.id)}" ${sel.includes(x.id)?'checked':''}></label>`).join('')||'<p class="muted small">Nichts vorhanden.</p>'}</div>`;
+// Ausnehmen: nur Mitglieder der gewählten Gruppen, die nicht ohnehin einzeln gewählt sind
+function exPick(f,gn,un,xn,init){
+  const box=f.querySelector(`[data-x="${xn}"]`); if(!box)return;
+  const fd=new FormData(f), gs=fd.getAll(gn), us=fd.getAll(un);
+  // Auswahl merken, auch wenn die Person kurz aus der Liste fällt (Gruppe ab- und wieder angewählt)
+  const sel=box._sel||=new Set(init);
+  box.querySelectorAll(`[name="${xn}"]`).forEach(i=>i.checked?sel.add(i.value):sel.delete(i.value));
+  const ids=new Set(db.members.filter(m=>gs.includes(m.group_id)).map(m=>m.user_id));
+  const list=db.users.filter(u=>ids.has(u.id)&&!us.includes(u.id));
+  if(!box.dataset.done)f.addEventListener('change',e=>{if([gn,un].includes(e.target.name))exPick(f,gn,un,xn)});
+  box.dataset.done=1;
+  box.innerHTML=list.length?picker(xn,list,[...sel]):'<p class="muted small">Erst eine Gruppe wählen – dann lassen sich einzelne Mitglieder ausnehmen.</p>';
+}
+const exHtml=xn=>`<h4>Ausnehmen</h4><p class="muted small" style="margin:0 0 4px">Gilt auch, wenn die Person über eine Gruppe drin wäre.</p><div data-x="${xn}"></div>`;
+const gallery=list=>feat('media')&&list.length?`<div class="gal">${list.map(m=>
+  `<a data-big="${esc(m.url)}"><img src="${esc(m.url)}" alt="" loading="lazy"></a>`).join('')}</div>`:'';
+function showBig(url){
+  dlg.innerHTML=`<form method="dialog"><button class="sec" aria-label="Schließen">✕</button></form><img src="${esc(url)}" alt="">`;
+  dlg.id='lb'; dlg.showModal();
+  dlg.addEventListener('close',()=>{dlg.id='dlg';dlg.innerHTML=''},{once:true});
+}
+document.addEventListener('click',ev=>{const a=ev.target.closest('[data-big]');if(a)showBig(a.dataset.big)});
+// Bild-Felder im Formular: vorhandene mit Lösch-Knopf, dazu ein Datei-Feld
+function mediaField(list,left){
+  if(!feat('media'))return '';
+  return `<fieldset><legend>Bilder <span style="font-weight:400">– noch ${left} möglich, je max. ${MAX_MB} MB</span></legend>
+    ${list.length?`<div class="gal">${list.map(m=>`<figure data-mid="${esc(m.id)}"><img src="${esc(m.url)}" alt="">
+      <button type="button" class="sec" data-mdel="${esc(m.id)}" aria-label="Bild entfernen">✕</button></figure>`).join('')}</div>`:''}
+    ${left>0?`<input type="file" name="pics" accept="image/*" multiple>
+      <p class="muted small" style="margin:6px 0 0">Du kannst Bilder auch ins Textfeld einfügen (Strg+V) oder hineinziehen.</p>
+      <div class="gal" data-picprev></div>`
+     :'<p class="muted small">Mehr geht nicht – erst eins entfernen.</p>'}</fieldset>`;
+}
+// Einfügen und Ziehen landen im selben Datei-Feld wie die Auswahl über den Knopf
+function bindPics(f,left,onErr){
+  const inp=f.elements.pics, box=f.querySelector('[data-picprev]');
+  if(!inp||!box)return;
+  let urls=[];
+  const show=()=>{
+    urls.forEach(URL.revokeObjectURL); urls=[...inp.files].map(x=>URL.createObjectURL(x));
+    box.innerHTML=urls.map((u,i)=>`<figure><img src="${u}" alt="">
+      <button type="button" class="sec" data-pdrop="${i}" aria-label="Auswahl entfernen">✕</button></figure>`).join('');
+  };
+  const put=list=>{
+    const dt=new DataTransfer();
+    for(const x of [...inp.files,...list])if(dt.items.length<left)dt.items.add(x);
+    if([...inp.files].length+list.length>left)onErr(`Höchstens ${MAX_MEDIA} Bilder – ${left} passen hier noch rein.`);
+    inp.files=dt.files; show();
+  };
+  inp.onchange=()=>put([]);
+  box.onclick=ev=>{const b=ev.target.closest('[data-pdrop]');if(!b)return;
+    const keep=[...inp.files].filter((_,i)=>i!==+b.dataset.pdrop), dt=new DataTransfer();
+    keep.forEach(x=>dt.items.add(x)); inp.files=dt.files; show()};
+  const grab=e=>{
+    const files=[...(e.clipboardData||e.dataTransfer).files].filter(x=>x.type.startsWith('image/'));
+    if(!files.length)return;
+    e.preventDefault(); put(files);
+  };
+  f.addEventListener('paste',grab);
+  f.addEventListener('drop',grab);
+  f.addEventListener('dragover',e=>e.preventDefault());
+}
+
+// Datei aus dem Formular holen: leer = bisheriges Bild behalten, Häkchen = entfernen
+async function pickImage(f,name,maxKB,current){
+  if(f.elements[name+'_rm']?.checked)return {url:null};
+  const file=f.elements[name].files[0];
+  if(!file||!file.size)return {url:current};
+  if(file.size>maxKB*1024)return {err:`Datei zu groß (max. ${maxKB>=1000?(maxKB/1000)+' MB':maxKB+' KB'}).`};
+  const ext=(file.name.split('.').pop()||'png').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,5)||'png';
+  const path=`${name}-${Date.now()}.${ext}`;   // neuer Name statt überschreiben – sonst zeigt der CDN-Cache das alte Bild
+  const up=await sb.storage.from('branding').upload(path,file,{contentType:file.type||undefined});
+  if(up.error)return {err:up.error.message};
+  return {url:sb.storage.from('branding').getPublicUrl(path).data.publicUrl};
+}
+function tabSettings(){
+  const sws=area=>AREA_FEAT[area].map(k=>sw('feat',k,FEATURES[k],feat(k))).join('');
+  // section statt fieldset: eine legend sitzt sonst auf dem Kartenrahmen
+  const sec=(area,title,body)=>can(area)?`<section class="card" style="margin:0 0 14px"><h3>${title}</h3>${body}</section>`:'';
+  return {html:`<form id="sf" class="narrow" style="margin:0">
+    <p class="muted small">Abgeschaltetes verschwindet aus der Oberfläche. Bereits angelegte Daten bleiben erhalten.
+      Du siehst nur die Bereiche, für die deine Rolle das Recht hat.</p>
+    ${sec('settings.look','🎨 Aussehen',`
+    <p class="muted small">Gilt für alle – im Kopf, im Browser-Tab und auf der Login-Seite.</p>
+    <label>Name<input name="name" required maxlength="40" value="${esc(brand.name)}"></label>
+    <label>Logo (PNG/JPG/SVG, max. 400 KB)<input type="file" name="logo" accept="image/*"></label>
+    ${brand.logo_url?`<div class="row" style="margin-top:10px"><img src="${esc(brand.logo_url)}" alt="" style="max-height:60px;border-radius:8px">
+      <label class="check"><input type="checkbox" name="logo_rm"> Logo entfernen</label></div>`:''}
+    <label>Hintergrundbild (optional, max. 1,5 MB)<input type="file" name="bg" accept="image/*"></label>
+    <p class="muted small" style="margin:6px 0 0">Liegt hinter einem Schleier, damit Texte lesbar bleiben. Wirkt mit jeder Vorlage.</p>
+    ${brand.bg_url?`<div class="row" style="margin-top:10px"><img src="${esc(brand.bg_url)}" alt="" style="max-height:70px;border-radius:8px">
+      <label class="check"><input type="checkbox" name="bg_rm"> Hintergrundbild entfernen</label></div>`:''}
+    <fieldset><legend>Erscheinungsbild (für alle)</legend>
+      <div class="seg">${Object.entries(THEMES).map(([k,v])=>
+        `<label><input type="radio" name="theme" value="${k}" ${(brand.theme||'glass')===k?'checked':''}>${v}</label>`).join('')}</div></fieldset>
+    <div class="row"><label style="flex:0 0 110px;min-width:0">Akzentfarbe<input type="color" name="accent" value="${esc(brand.accent||'#4f46e5')}"></label>
+      <p class="muted small" style="flex:1;min-width:160px;margin:0">Hell/Dunkel stellt jede Person selbst oben in der Kopfzeile ein.</p></div>`)}
+    ${sec('settings.events','📅 Termine',`${sws('settings.events')}
+      <p class="muted small" style="margin:4px 0 0">Fahrgemeinschaften lassen sich zusätzlich je Termin-Art abschalten (Reiter „Termin-Arten").</p>
+      <label>Automatisch ins Archiv, Tage nach dem Datum<input type="number" name="ae" min="1" max="3650" value="${brand.archive_events_days??''}" placeholder="leer = nie, z. B. 30"></label>`)}
+    ${sec('settings.board','📌 Pinnwand',`${sws('settings.board')}
+      <label>Automatisch ins Archiv, Tage nach dem Erstellen<input type="number" name="ap" min="1" max="3650" value="${brand.archive_posts_days??''}" placeholder="leer = nie, z. B. 90"></label>
+      <p class="muted small" style="margin:4px 0 0">Nichts wird gelöscht – Archiviertes bleibt unter „📦 Archiv" einsehbar.</p>`)}
+    ${sec('settings.ideas','💡 Vorschläge',`${sws('settings.ideas')}
+      ${sw('rao','1','Antworten dürfen ohne Namen gegeben werden',brand.reply_anon_allowed!==false)}
+      <p class="muted small" style="margin:4px 0 0">Betrifft nur die <b>Antwort</b> der Zuständigen.
+        Vorschläge selbst bleiben immer anonym einreichbar.</p>`)}
+    ${sec('settings.notify','🔔 Benachrichtigungen',`${sws('settings.notify')}
+      <p class="muted small" style="margin:4px 0 0">Abgeschaltet verschickt der Server über diesen Weg nichts mehr.</p>
+      <div id="nstat" class="muted small" style="margin-top:8px">Wird geprüft …</div>`)}
+    ${sec('settings.access','🔑 Zugang & Namen',`${sws('settings.access')}
+      <p class="muted small" style="margin:4px 0 0">„Selbst registrieren" aus blendet nur den Knopf aus. Ganz zu ist es erst mit
+        Supabase → Authentication → Sign In / Providers → „Allow new users to sign up" aus. Neue Konten brauchen ohnehin eine Freigabe.
+        Spitznamen aus: überall wieder echte Namen, gesetzte Spitznamen bleiben gespeichert.</p>`)}
+    <div style="margin-top:16px"><button>Speichern</button></div><p class="err" id="serr"></p></form>`,
+  async init(){
+    const f=$('#sf');
+    if(can('settings.notify'))(async()=>{   // Versandstatus nachladen, damit das Formular nicht darauf warten muss
+      const {data,error}=await sb.rpc('notify_status');
+      const st=data?.[0], box=$('#nstat'); if(!box)return;
+      if(error||!st)return box.innerHTML='Status nicht abrufbar – fehlt <code>migrations/011_v17.sql</code>?';
+      box.innerHTML=(st.configured
+        ? `✉️ Mail eingerichtet. ${st.sent_total} Mitteilungen verschickt, ${st.pending} ${st.pending===1?"wartet":"warten"}.`
+          +(st.failed?` <span class="warn">${st.failed} stecken fest – siehe <code>net._http_response</code>.</span>`:'')
+        : '✉️ Mail noch nicht eingerichtet – Schritte am Ende von <code>migrations/011_v17.sql</code>.')
+        +'<br>'+('push_configured' in st
+          ? (st.push_configured?`📱 Push eingerichtet, ${st.push_devices} ${st.push_devices===1?'Gerät':'Geräte'} angemeldet.`
+                               :'📱 Push noch nicht eingerichtet – Schritte am Ende von <code>migrations/015_v21.sql</code>.')
+          : '📱 Push: <code>migrations/015_v21.sql</code> fehlt noch.');
+    })();
+    f.onchange=ev=>{  // Vorschau, gilt erst mit "Speichern" für alle
+      if(ev.target.name==='theme')document.documentElement.dataset.theme=ev.target.value;
+      if(ev.target.name==='accent'){document.documentElement.style.setProperty('--acc',ev.target.value);
+        document.documentElement.style.setProperty('--acc-fg',fgFor(ev.target.value))}};
+    f.onsubmit=async ev=>{ev.preventDefault();
+      const fd=new FormData(f);
+      const b=f.querySelector('button');b.disabled=true;
+      const err=t=>{$('#serr').textContent=de(t);$('#serr').className='err';b.disabled=false};
+      try{
+        // nur senden, was zu den eigenen Bereichen gehört – den Rest prüft guard_settings() ohnehin
+        const row={}, num=v=>v.trim()===''?null:parseInt(v,10);
+        if(can('settings.look')){
+          const L=await pickImage(f,'logo',400,brand.logo_url); if(L.err)return err(L.err);
+          const B=await pickImage(f,'bg',1500,brand.bg_url);    if(B.err)return err(B.err);
+          Object.assign(row,{name:f.elements.name.value.trim(),logo_url:L.url,bg_url:B.url,
+            theme:f.elements.theme.value,accent:f.elements.accent.value});
+        }
+        if(can('settings.events'))row.archive_events_days=num(f.elements.ae.value);
+        if(can('settings.board'))row.archive_posts_days=num(f.elements.ap.value);
+        if(can('settings.ideas'))row.reply_anon_allowed=f.elements.rao.checked;
+        const mine=SET_PERMS.filter(can).flatMap(a=>AREA_FEAT[a]), on=fd.getAll('feat');
+        row.features=Object.keys(FEATURES).filter(k=>mine.includes(k)?on.includes(k):feat(k));   // fremde Bereiche unverändert
+        const {error}=await sb.from('app_settings').update(row).eq('id',true);
+        if(error)return err(error.message);
+        await loadBrand();
+        $('#serr').textContent='Gespeichert.';$('#serr').className='ok';b.disabled=false;
+      }catch(e){err(e.message)}
+    };
+  }};
+}
+
+function tabBackup(){
+  return {html:`<div class="card narrow" style="margin:0">
+    ${can('backup.export')?`<h3>💾 Backup herunterladen</h3>
+      <p class="muted small">Alle Daten der App als Datei – auch anonyme Stimmen und wer anonyme Vorschläge eingereicht hat.
+        <b>Die Datei vertraulich aufbewahren.</b> Nicht enthalten: Logins und Passwörter, Bilddateien, Mail-/Push-Zugangsdaten.
+        Das Herunterladen steht im Log.</p>
+      <button type="button" id="bkdown">Backup herunterladen</button>`:''}
+    ${can('backup.import')?`<h3 style="margin-top:18px">📥 Backup einspielen</h3>
+      <p class="muted small"><b>Überschreibt alles</b> mit dem Stand aus der Datei: Termine, Zusagen, Beiträge, Umfragen, Vorschläge,
+        Gruppen, Rollen und Rechte, Termin-Arten, Einstellungen und Log. Konten, die es seitdem nicht mehr gibt, kommen nicht zurück –
+        ihre Zusagen und Stimmen fehlen dann. Geht nur mit einem Backup vom gleichen Datenbank-Stand.</p>
+      <div class="row"><input type="file" id="bkfile" accept=".json,application/json" style="flex:1">
+        <button type="button" class="danger" id="bkup">Einspielen</button></div>`:''}
+    <p id="bkmsg" class="muted small"></p></div>`,
+  init(){
+    const msg=(t,ok)=>{const m=$('#bkmsg');m.textContent=de(t);m.className=ok?'ok':'err'};
+    const d=$('#bkdown');
+    if(d)d.onclick=async()=>{d.disabled=true;
+      const {data,error}=await sb.rpc('backup_export'); d.disabled=false;
+      if(error)return msg(error.message);
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));
+      a.download=(brand.name+'-backup-'+today()).replace(/[^\wäöüÄÖÜß-]+/g,'_')+'.json';
+      a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+      msg('Backup heruntergeladen.',1)};
+    const u=$('#bkup');
+    if(u)u.onclick=async()=>{const f=$('#bkfile').files[0];
+      if(!f)return msg('Bitte zuerst die Backup-Datei wählen.');
+      let b; try{b=JSON.parse(await f.text())}catch(e){return msg('Die Datei ist kein gültiges Backup.')}
+      if(b?.app!=='eventplaner')return msg('Das ist keine Backup-Datei dieser App.');
+      if(!confirm(`Backup vom ${fmtDT(b.created_at)} einspielen?\n\nAlles Aktuelle wird überschrieben – auch Rollen und Rechte. `
+        +'Das lässt sich nicht rückgängig machen. Vorher am besten selbst ein Backup herunterladen.'))return;
+      u.disabled=true;
+      const {data,error}=await sb.rpc('backup_import',{b}); u.disabled=false;
+      if(error)return msg(error.message);
+      alert(`Backup eingespielt (${data} Einträge).`);
+      await loadBrand(); render()};
+  }};
+}
+
+async function viewAdmin(tab){
+  const TABS=[['users','Benutzer',can('users.approve')||can('users.manage')],['roles','Rollen',can('users.manage')],
+    ['groups','Gruppen',can('groups.manage')],['types','Termin-Arten',can('settings.events')],
+    ['settings','Einstellungen',SET_PERMS.some(can)],['backup','Backup',can('backup.export')||can('backup.import')],
+    ['log','Log',can('log.view')]].filter(x=>x[2]);
+  if(!TABS.some(x=>x[0]===tab))tab=TABS[0][0];
+  const body=await {users:tabUsers,roles:tabRoles,groups:tabGroups,types:tabTypes,settings:tabSettings,backup:tabBackup,log:tabLog}[tab]();
+  app.innerHTML=`<div class="head"><h2>Verwaltung</h2></div><nav class="subnav">${TABS.map(([k,l])=>`<a href="#admin/${k}" class="${k===tab?'on':''}">${l}</a>`).join('')}</nav>
+    <p class="err" id="err"></p>${body.html}`;
+  body.init?.();
+  app.onclick=async ev=>{  // ⋮-Menüs
+    const b=ev.target.closest('button[data-edit],button[data-del],button[data-new]');if(!b)return;
+    const kind=b.dataset.edit||b.dataset.del||b.dataset.new, id=b.dataset.id;
+    const dlgOf={role:roleDialog,type:typeDialog,group:groupDialog}[kind];
+    const src={role:db.roles,type:db.types,group:db.groups};
+    if(b.dataset.new)return dlgOf();
+    if(b.dataset.edit)return dlgOf(src[kind].find(x=>x.id===id));
+    const msg={role:'Rolle löschen? Personen mit dieser Rolle sind danach wieder „nicht freigegeben“.',
+      type:'Termin-Art löschen? Termine dieser Art werden „Ohne Art“.',
+      group:'Gruppe löschen? Beiträge nur an diese Gruppe sieht danach niemand mehr.'}[kind];
+    if(!confirm(msg))return;
+    const {error}=await sb.from({role:'roles',type:'event_types',group:'groups'}[kind]).delete().eq('id',id);
+    error?showErr(error.message):render();
+  };
+}
+
+async function tabUsers(){
+  const {data:users,error}=await sb.rpc('list_users');if(error)throw error;
+  const mgr=can('users.manage');
+  const roleCell=u=>{
+    if(u.is_owner)return '👑 Besitzer';
+    const n=(u.roles||[]).map(r=>roleById(r)?.name).filter(Boolean);
+    const txt=n.length?n.map(x=>`<span class="chip">${esc(x)}</span>`).join(' '):'<span class="warn">⏳ nicht freigegeben</span>';
+    if(u.id===me.id)return txt+' <span class="muted">(du)</span>';
+    return txt+(db.roles.some(mayGrant)?` <button class="sec" data-roles="${esc(u.id)}" aria-label="Rollen von ${esc(u.name)}">Rollen …</button>`:'');
+  };
+  return {html:`<div class="card"><div class="tw"><table><thead><tr><th>Name</th><th>E-Mail</th><th>Rollen</th><th></th></tr></thead><tbody id="ut">
+    ${users.map(u=>`<tr><td><b>${esc(u.name)}</b>${u.nick?` <span class="muted small">„${esc(u.nick)}“</span>`:''}</td><td class="muted">${esc(u.email)}</td><td>${roleCell(u)}</td><td class="row" style="flex-wrap:nowrap">${!u.is_owner||u.id===me.id?`<button class="sec" data-editname="${esc(u.id)}" aria-label="Name von ${esc(u.name)} ändern">✏️</button>`:''}${mgr&&!u.is_owner&&u.id!==me.id?`<button class="sec" data-deluser="${esc(u.id)}" data-name="${esc(u.name)}">Löschen</button>`:''}</td></tr>`).join('')}
+    </tbody></table></div></div>`,
+  init(){
+    $('#ut').onclick=async ev=>{
+      const e=ev.target.closest('button[data-editname]'); if(e)return nameDialog(users.find(u=>u.id===e.dataset.editname));
+      const ro=ev.target.closest('button[data-roles]'); if(ro)return rolesDialog(users.find(u=>u.id===ro.dataset.roles));
+      const b=ev.target.closest('button[data-deluser]');if(!b)return;
+      if(!confirm(`${b.dataset.name} komplett löschen (Login + alle Zusagen)?`))return;
+      const {error}=await sb.rpc('admin_delete_user',{uid:b.dataset.deluser});error?showErr(error.message):render()};
+  }};
+}
+function tabRoles(){
+  const n=id=>db.proles.filter(x=>x.role_id===id).length;
+  // Rollen mit Rechten, die man selbst nicht hat, kann nur der Besitzer ändern (guard_role)
+  const mine=r=>me.is_owner||r.perms.every(can);
+  return {html:`<div class="card"><div class="row between"><p class="muted small" style="margin:0">Der Besitzer hat immer alle Rechte.</p><button data-new="role">+ Neue Rolle</button></div>
+    ${db.roles.map(r=>`<div class="item"><div><b>${esc(r.name)}</b>${r.mfa_required?' <span class="chip">🔐 2FA Pflicht</span>':''}${r.approvable?' <span class="chip">🔓 Freigeber dürfen vergeben</span>':''}<div class="muted small">${r.perms.length} Rechte · ${n(r.id)} ${n(r.id)===1?'Person':'Personen'}</div></div>${mine(r)?menu('role',r.id):'<span class="muted small">nur Besitzer</span>'}</div>`).join('')}</div>`};
+}
+function tabTypes(){
+  return {html:`<div class="card"><div class="row between"><p class="muted small" style="margin:0">Arten für Termine, z. B. Umzug, Probe, Fest.</p><button data-new="type">+ Neue Art</button></div>
+    ${db.types.map(t=>`<div class="item"><div><span class="dot" style="--c:${esc(t.color)}"></span><b>${esc(t.name)}</b><div class="muted small">${t.rides?'🚗 mit Fahrgemeinschaften':'ohne Fahrgemeinschaften'}</div></div>${menu('type',t.id)}</div>`).join('')||'<p class="muted">Noch keine Arten.</p>'}</div>`};
+}
+
+// ---------- Log ----------
+const TBL={events:'Termin',parts:'Teilnahme',profiles:'Benutzer',roles:'Rolle',event_types:'Termin-Art',
+  posts:'Beitrag',polls:'Umfrage',poll_options:'Umfrage-Option',groups:'Gruppe',group_members:'Gruppen-Mitglied',
+  post_targets:'Zielgruppe',media:'Bild',app_settings:'Einstellungen',event_invites:'Anfrage',backup:'Backup',profile_roles:'Rollen-Zuordnung'};
+const OPS={INSERT:'erstellt',UPDATE:'geändert',DELETE:'gelöscht',EXPORT:'heruntergeladen',IMPORT:'eingespielt'};
+const FIELDS={title:'Titel',type_id:'Art',date:'Datum',time:'Uhrzeit',deadline:'Anmeldeschluss',max_parts:'Max. Teilnehmer',location:'Ort',descr:'Beschreibung',status:'Status',ride:'Anreise',seats:'Plätze',
+  with_id:'Fährt mit',note:'Notiz',name:'Name',role_id:'Rolle',is_owner:'Besitzer',perms:'Rechte',color:'Farbe',rides:'Fahrgemeinschaften',
+  body:'Text',audience:'Sichtbarkeit',pinned:'Angepinnt',kind:'Umfrage-Art',anon:'Anonym',closes_at:'Frist',logo_url:'Logo',
+  theme:'Erscheinungsbild',accent:'Akzentfarbe',bg_url:'Hintergrundbild',archived_at:'Archiv',
+  archive_events_days:'Termine automatisch archivieren (Tage)',archive_posts_days:'Beiträge automatisch archivieren (Tage)',
+  label:'Antwort',at:'Termin-Vorschlag',pos:'Reihenfolge',group_id:'Gruppe',user_id:'Person',post_id:'Beitrag',
+  url:'Datei',mfa_required:'Zwei-Faktor-Pflicht',first_name:'Vorname',last_name:'Nachname',nick:'Spitzname',
+  features:'Schalter',reply_anon_allowed:'Anonyme Antworten erlaubt',exclude:'Ausgenommen',approvable:'Von Freigebern vergebbar'};
+function val(k,v){
+  if(v==null||v==='')return '–';
+  if(k==='role_id')return roleById(v)?.name||'(gelöschte Rolle)';
+  if(k==='type_id')return db.types.find(t=>t.id===v)?.name||'(gelöschte Art)';
+  if(k==='with_id')return fullName(userById(v));
+  if(k==='status')return STATUS[v]||v;
+  if(k==='ride')return RIDE[v]||v;
+  if(k==='deadline'||k==='closes_at'||k==='at'||k==='archived_at')return fmtDT(v);
+  if(k==='group_id')return groupById(v)?.name||'(gelöschte Gruppe)';
+  if(k==='user_id')return fullName(userById(v));
+  if(k==='features')return v.map(f=>FEATURES[f]||f).join(', ')||'keine';
+  if(k==='audience')return v==='all'?'Alle':'Nur bestimmte';
+  if(k==='kind')return {single:'Eine Antwort',multi:'Mehrfachauswahl',dates:'Terminfindung'}[v]||v;
+  if(k==='theme')return THEMES[v]||v;
+  if(k==='perms')return v.map(p=>PERMS[p]||p).join(', ')||'keine';
+  if(typeof v==='boolean')return v?'ja':'nein';
+  return String(v);
+}
+function details(l){
+  const o=l.old||{}, n=l.new||{};
+  let s='';
+  if(l.tbl==='parts'&&l.op!=='DELETE')s=[STATUS[n.status],n.status==='ja'&&n.ride!=='self'&&RIDE[n.ride]+(n.ride==='drive'?` (${n.seats} Plätze)`:'')+(n.with_id?` bei ${val('with_id',n.with_id)}`:''),n.note&&`„${n.note}“`].filter(Boolean).join(' · ');
+  else if(l.tbl==='profiles'&&l.op==='INSERT')s='registriert';
+  else if(l.op==='UPDATE')s=Object.keys(n).filter(k=>FIELDS[k]&&JSON.stringify(o[k])!==JSON.stringify(n[k])).map(k=>`${FIELDS[k]}: ${val(k,o[k])} → ${val(k,n[k])}`).join('; ');
+  else if(l.tbl==='roles'&&l.op==='INSERT')s='Rechte: '+val('perms',n.perms);
+  else if(l.tbl==='posts'&&l.op==='INSERT')s=n.audience==='all'?'für alle':'nur für eine Auswahl';
+  else if(l.tbl==='polls'&&l.op==='INSERT')s=[val('kind',n.kind),n.anon&&'anonym',n.closes_at&&'bis '+fmtDT(n.closes_at)].filter(Boolean).join(' · ');
+  else if(l.tbl==='poll_options'&&l.op!=='UPDATE')s=(n.label||o.label)||fmtDT(n.at||o.at);
+  else if(l.op==='INSERT'&&(n.label||n.title||n.name))s=(n.label||n.title||n.name)+(n.exclude?' (ausgenommen)':'');
+  return esc(s);
+}
+async function tabLog(){
+  const {data,error}=await sb.from('audit_log').select('*').order('at',{ascending:false}).limit(1000);  // shortcut: nur letzte 1000 Einträge, bei Bedarf serverseitig filtern/paginieren
+  if(error)throw error;
+  const rows=data.map(l=>({...l,who:l.actor_name||'System',what:`${TBL[l.tbl]||l.tbl} ${OPS[l.op]}`,
+    forOther:l.tbl==='parts'&&!!l.actor&&l.actor!==(l.new||l.old).user_id,det:details(l)}));
+  const people=[...new Set(rows.map(r=>r.who))].sort();
+  const seen=Object.fromEntries(Object.entries(TBL).filter(([k])=>rows.some(r=>r.tbl===k)));
+  return {html:`<div class="card"><form id="lf" class="filters" style="padding:0" onsubmit="return false">
+      <label>Wer<select name="who"><option value="">Alle</option>${people.map(p=>`<option>${esc(p)}</option>`).join('')}</select></label>
+      <label>Bereich<select name="tbl"><option value="">Alle</option>${opts(seen)}</select></label>
+      <label>Aktion<select name="op"><option value="">Alle</option>${opts(OPS)}</select></label>
+      <label>Ab Datum<input type="date" name="from"></label>
+      <label>Suche<input name="q" type="search" placeholder="Termin, Name, …"></label>
+      <label class="check"><input type="checkbox" name="other"> nur „für andere eingetragen“</label>
+    </form><p class="muted small" id="cnt"></p>
+    <div class="tw"><table><thead><tr><th>Zeit</th><th>Wer</th><th>Was</th><th>Betrifft</th><th>Details</th></tr></thead><tbody id="lt"></tbody></table></div></div>`,
+  init(){
+    const f=$('#lf');
+    const draw=()=>{const v=Object.fromEntries(new FormData(f)), q=(v.q||'').toLowerCase();
+      const list=rows.filter(r=>(!v.who||r.who===v.who)&&(!v.tbl||r.tbl===v.tbl)&&(!v.op||r.op===v.op)&&(!v.from||new Date(r.at).toLocaleDateString('sv')>=v.from)
+        &&(!v.other||r.forOther)&&hits(`${r.who} ${r.ctx} ${r.det}`,q));
+      $('#cnt').textContent=`${list.length} von ${rows.length} Einträgen`;
+      $('#lt').innerHTML=list.map(r=>`<tr><td class="small">${new Date(r.at).toLocaleString('de-DE')}</td><td>${esc(r.who)}</td><td>${r.what}${r.forOther?' <span class="warn small">(für andere)</span>':''}</td><td>${esc(r.ctx)}</td><td class="small">${r.det}</td></tr>`).join('');
+    };
+    f.oninput=draw;draw();
+  }};
+}
+
+if('serviceWorker' in navigator&&isSecureContext)navigator.serviceWorker.register('sw.js').catch(()=>{});
+applyMode();
+$('#mode').onclick=()=>{mode={auto:'light',light:'dark',dark:'auto'}[mode];store('mode',mode);applyMode()};
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>{if(mode==='auto')applyMode()});
+
+if(SUPABASE_URL.includes('DEIN-PROJEKT'))
+  app.innerHTML='<div class="card narrow"><h2>Noch nicht eingerichtet</h2><p>Oben im Script <code>SUPABASE_URL</code> und <code>SUPABASE_KEY</code> eintragen – siehe README.md.</p></div>';
+else{
+  sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+  // Callback nicht awaiten (supabase-js Deadlock-Hinweis) → render entkoppelt
+  loadBrand();
+  sb.auth.onAuthStateChange(ev=>{if(ev==='PASSWORD_RECOVERY')recovery=true;setTimeout(render)});
+  addEventListener('hashchange',()=>{app.onclick=null;render()});
+}
+</script>
+</body>
+</html>
