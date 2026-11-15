@@ -202,6 +202,8 @@ input[type=checkbox][role=switch]:checked{background:var(--acc)}
 input[type=checkbox][role=switch]:checked::after{transform:translateX(18px)}
 input[type=checkbox][role=switch]:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .tw{overflow-x:auto}
+table.noti{margin-top:4px}table.noti th:not(:first-child),table.noti td:not(:first-child){text-align:center;width:64px}
+table.noti input{width:20px;height:20px}
 /* Benutzerliste: E-Mail unter dem Namen, Knöpfe klein und nebeneinander – passt so aufs Handy */
 table.users td{word-break:break-word}table.users .chip{display:inline-block;margin:2px 4px 2px 0}
 td.act{white-space:nowrap;text-align:right;width:1%}td.act button{padding:6px 9px;margin-left:4px;font-size:15px}
@@ -533,7 +535,7 @@ async function logout(){loginMsg='';hint.innerHTML='';
 // ---------- Zwei-Faktor-Anmeldung ----------
 // Supabase prüft den Code; die DB-Regeln sehen die erreichte Stufe im Token (aal1 / aal2).
 const factors=async()=>((await sb.auth.mfa.listFactors()).data?.totp||[]).filter(f=>f.status==='verified');
-const NEED_DB=25;   // bei jeder neuen Migration hier UND in der Migration hochzählen
+const NEED_DB=26;   // bei jeder neuen Migration hier UND in der Migration hochzählen
 let dbState={v:null,ok:true,missing:[]};
 async function checkDb(){
   // db_check() legt pruefen.sql an und nennt jede fehlende Datei einzeln – genauer als die Versionsnummer,
@@ -689,6 +691,10 @@ function pushHtml(sub){
     ?'<div class="row between"><span class="small">📱 Push auf diesem Gerät ist <b>an</b>.</span><button type="button" class="sec" id="pushoff">Ausschalten</button></div>'
     :'<div class="row between"><span class="small">📱 Push aufs Handy bei neuen Pinnwand-Beiträgen</span><button type="button" id="pushon">Einschalten</button></div>';
 }
+const NOTI={post:'📌 Neuer Pinnwand-Beitrag',event_new:'📅 Neuer Termin',invited:'🎯 Du bist angefragt',
+  entered:'✏️ Jemand hat dich eingetragen',changed:'🔄 Termin geändert oder abgesagt',reminder:'⏰ Erinnerung vor Anmeldeschluss'};
+const notiKinds=()=>Object.keys(NOTI).filter(k=>(k!=='post'||feat('board'))&&(k!=='invited'||feat('invites')));
+const notiChans=()=>['mail','push'].filter(feat);
 async function accountDialog(){
   const psub=await pushSub();
   const fs=await factors(), need=mfaState.req;
@@ -708,9 +714,11 @@ async function accountDialog(){
     <div class="row" style="margin-top:8px"><label style="flex:0 0 110px;min-width:0">Akzentfarbe
       <input type="color" name="myaccent" value="${esc(store('myAccent')||brand.accent||'#4f46e5')}"></label>
       <label class="check" style="flex:1"><input type="checkbox" name="myacc" ${store('myAccent')?'checked':''}> eigene Farbe verwenden</label></div>
-    ${feat('mail')||feat('push')?'<h4>Benachrichtigungen</h4>':''}
-    ${feat('mail')?`${sw('notify','1','Mail bei neuen Pinnwand-Beiträgen',me.notify!==false)}
-    <p class="muted small" style="margin:4px 0 0">Nur Beiträge, die du auch sehen darfst. Du bekommst nie eine Mail über deine eigenen.</p>`:''}
+    ${notiChans().length?`<h4>Benachrichtigungen</h4>
+      <table class="noti"><thead><tr><th>Wann</th>${notiChans().map(c=>`<th>${c==='mail'?'✉️ Mail':'📱 Push'}</th>`).join('')}</tr></thead>
+      <tbody>${notiKinds().map(k=>`<tr><td>${NOTI[k]}</td>${notiChans().map(c=>`<td><input type="checkbox" name="noti" value="${k}:${c}"
+        aria-label="${NOTI[k]} per ${c==='mail'?'Mail':'Push'}" ${(me.notify_off||[]).includes(k+':'+c)?'':'checked'}></td>`).join('')}</tr>`).join('')}</tbody></table>
+      <p class="muted small" style="margin:4px 0 0">Nur über das, was du auch sehen darfst – und nie über das, was du selbst auslöst.</p>`:''}
     ${feat('push')?`<div style="margin-top:12px" id="pushbox">${pushHtml(psub)}</div>`:''}`,
     async fd=>{
       store('myTheme',fd.get('mytheme')||'');
@@ -719,11 +727,13 @@ async function accountDialog(){
         const {error}=await sb.rpc('nick_set',{n:fd.get('nick')});
         if(error)return error.message;
       }
-      const want=fd.has('notify');
-      if(!feat('mail')||want===(me.notify!==false))return;
-      const {error}=await sb.rpc('notify_set',{on_:want});
+      if(!notiChans().length)return;
+      // Angezeigt ist nur, was gerade angeboten wird – die Wahl für Ausgeblendetes bleibt erhalten
+      const shown=notiKinds().flatMap(k=>notiChans().map(c=>k+':'+c)), on=fd.getAll('noti'), old=me.notify_off||[];
+      const off=[...old.filter(x=>!shown.includes(x)),...shown.filter(x=>!on.includes(x))].sort();
+      if(off.join()===[...old].sort().join())return;
+      const {error}=await sb.rpc('notify_prefs_set',{off});
       if(error)return error.message;
-      me.notify=want;
     });
   // Vorschau beim Anklicken; Abbrechen stellt das gespeicherte Aussehen wieder her
   const df=$('#df');
