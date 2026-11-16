@@ -600,7 +600,7 @@ async function logout(){loginMsg='';hint.innerHTML='';
 // ---------- Zwei-Faktor-Anmeldung ----------
 // Supabase prüft den Code; die DB-Regeln sehen die erreichte Stufe im Token (aal1 / aal2).
 const factors=async()=>((await sb.auth.mfa.listFactors()).data?.totp||[]).filter(f=>f.status==='verified');
-const NEED_DB=30;   // bei jeder neuen Migration hier UND in der Migration hochzählen
+const NEED_DB=31;   // bei jeder neuen Migration hier UND in der Migration hochzählen
 let dbState={v:null,ok:true,missing:[]};
 async function checkDb(){
   // db_check() legt pruefen.sql an und nennt jede fehlende Datei einzeln – genauer als die Versionsnummer,
