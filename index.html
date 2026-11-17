@@ -142,6 +142,12 @@ a.card:hover{border-color:color-mix(in srgb,var(--acc) 45%,var(--line));transfor
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .chip{font-size:12.5px;padding:4px 10px;border-radius:999px;background:color-mix(in srgb,var(--fg) 5%,transparent);border:1px solid var(--line)}
 .chip a.route{margin-left:4px;white-space:nowrap}
+.sugg{position:absolute;left:0;right:0;top:100%;z-index:30;margin-top:2px;display:flex;flex-direction:column;border:1px solid var(--line);
+  border-radius:12px;overflow:hidden;background:var(--bg);box-shadow:0 12px 30px rgb(0 0 0/.18)}
+.sugg button{all:unset;cursor:pointer;padding:9px 12px;font-size:14px;color:var(--fg);border-top:1px solid var(--line)}
+.sugg button:first-child{border-top:0}.sugg button:hover,.sugg button:focus{background:var(--field)}
+.sugg[hidden]{display:none}
+.sugg .src{padding:4px 12px;font-size:11px;color:var(--muted);border-top:1px solid var(--line)}
 .chip.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
 .chip.danger{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,transparent)}
 .me{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:14px}.me.open{color:var(--warn);font-weight:600}
@@ -289,8 +295,41 @@ const fmtD=d=>new Date(d+'T00:00').toLocaleDateString('de-DE',{weekday:'short',d
 const fmt=e=>e.end_date?fmtD(e.date)+(e.time?', '+e.time+' Uhr':'')+' – '+fmtD(e.end_date)+(e.end_time?', '+e.end_time+' Uhr':'')
   :fmtD(e.date)+(e.time?', '+e.time+(e.end_time?'–'+e.end_time:'')+' Uhr':'');
 const meetText=e=>[e.meet_time&&e.meet_time+' Uhr',e.meet_place].filter(Boolean).join(', ');
+// Adressvorschläge: eigene Orte + Photon (OpenStreetMap, komoot).
+// shortcut: öffentlicher Photon-Demo-Server ohne Garantie – fällt er aus, kommen nur die eigenen Orte; bei Bedarf eigener Server oder Google Places
+const PHOTON='https://photon.komoot.io/api/';
+const photonAddr=f=>{const p=f.properties||{};   // „Festhalle, Hauptstr. 5, 12345 Musterdorf"
+  return [p.name!==p.street&&p.name!==p.city?p.name:'',[p.street,p.housenumber].filter(Boolean).join(' '),
+    [p.postcode,p.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')};
+function addrPick(inp,own){
+  const box=document.createElement('div');box.className='sugg';box.setAttribute('role','listbox');box.hidden=true;
+  inp.parentElement.style.position='relative';inp.after(box);inp.autocomplete='off';
+  let timer,seq=0;
+  const show=(list,osm)=>{box.innerHTML=list.map(a=>`<button type="button" role="option">${esc(a)}</button>`).join('')
+      +(osm?'<div class="src">Adressen: © OpenStreetMap</div>':'');box.hidden=!list.length};
+  inp.addEventListener('input',()=>{clearTimeout(timer);const q=inp.value.trim(), k=++seq;
+    const mine=q?own.filter(p=>p!==q&&hits(p,q)).slice(0,4):[];
+    show(mine);if(q.length<3)return;
+    timer=setTimeout(async()=>{try{   // erst nach 400 ms Tipp-Pause fragen (fair use)
+      const j=await (await fetch(PHOTON+'?lang=de&limit=5&q='+encodeURIComponent(q))).json();
+      if(k!==seq)return;   // inzwischen weitergetippt
+      const osm=(j.features||[]).map(photonAddr).filter(a=>a&&a!==q&&!mine.includes(a));
+      show([...mine,...new Set(osm)].slice(0,8),osm.length)}catch(e){}},400)});
+  box.onpointerdown=e=>e.preventDefault();   // Fokus bleibt im Feld, sonst schließt blur die Liste vor dem Klick
+  box.onclick=e=>{const b=e.target.closest('button');if(!b)return;inp.value=b.textContent;box.hidden=true;inp.focus()};
+  const btns=()=>[...box.querySelectorAll('button')];
+  inp.addEventListener('keydown',e=>{if(e.key==='Escape')box.hidden=true;
+    if(e.key==='ArrowDown'&&!box.hidden){e.preventDefault();btns()[0]?.focus()}});
+  box.addEventListener('keydown',e=>{const l=btns(), i=l.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();l[Math.min(i+1,l.length-1)].focus()}
+    if(e.key==='ArrowUp'){e.preventDefault();(i>0?l[i-1]:inp).focus()}
+    if(e.key==='Escape'){box.hidden=true;inp.focus()}});
+  const leave=()=>setTimeout(()=>{if(document.activeElement!==inp&&!box.contains(document.activeElement))box.hidden=true});
+  inp.addEventListener('blur',leave);box.addEventListener('focusout',leave);
+}
 // Karten-App des Geräts mit der Adresse (kein Dienst, kein Schlüssel)
-const route=a=>`<a href="${esc((isIOS()?'https://maps.apple.com/?q=':'https://www.google.com/maps/search/?api=1&query=')+encodeURIComponent(a))}" target="_blank" rel="noopener" class="route" aria-label="Route zu ${esc(a)}">🗺 Route</a>`;
+const mapUrl=a=>(isIOS()?'https://maps.apple.com/?q=':'https://www.google.com/maps/search/?api=1&query=')+encodeURIComponent(a);
+const route=a=>`<a href="${esc(mapUrl(a))}" target="_blank" rel="noopener" class="route" aria-label="Route zu ${esc(a)}">🗺 Route</a>`;
 const lastDay=e=>e.end_date||e.date;   // mehrtägig: bis zum letzten Tag „kommend"
 // Kalenderdatei (RFC 5545). shortcut: Zeiten als Ortszeit ohne Zeitzone (= Ortszeit des Geräts), bei Nutzern außerhalb DE auf TZID umstellen
 const icsEsc=s=>String(s).replace(/[\\;,]/g,m=>'\\'+m).replace(/\r?\n/g,'\\n');
@@ -306,12 +345,23 @@ function icsText(e){
     else if(e.end_time){const [h,m]=e.end_time.split(':');x.setHours(+h,+m);if(x<=s)x.setDate(x.getDate()+1)}else x.setHours(x.getHours()+2);
     when=['DTSTART:'+f(s),'DTEND:'+f(x)]}
   const url=here()+'#event/'+e.id;
-  const desc=[meetText(e)&&'Treffen: '+meetText(e),e.desc,e.deadline&&'Anmeldung bis '+fmtDT(e.deadline),url].filter(Boolean).join('\n\n');
+  const desc=[meetText(e)&&'Treffen: '+meetText(e)+(e.meet_place?'\nKarte: '+mapUrl(e.meet_place):''),
+    e.location&&'Ort: '+e.location+'\nKarte: '+mapUrl(e.location),e.type_id&&'Art: '+typeOf(e).name,icsMe(e),
+    e.deadline&&'Anmeldung bis '+fmtDT(e.deadline),e.desc,'In der App: '+url].filter(Boolean).join('\n\n');
   return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ClubFunk//DE','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
     'UID:'+e.id+'@clubfunk','DTSTAMP:'+new Date().toISOString().replace(/[-:]|\.\d+/g,''),...when,'SUMMARY:'+icsEsc(e.title),
     ...(e.location?['LOCATION:'+icsEsc(e.location)]:[]),'DESCRIPTION:'+icsEsc(desc),'URL:'+url,'END:VEVENT','END:VCALENDAR']
     .map(icsFold).join('\r\n')+'\r\n';
 }
+// Stand beim Herunterladen – spätere Änderungen an Antwort/Mitfahrt stehen nicht im Kalender
+function icsMe(e){const P=db.parts[e.id]||{}, x=P[me.id];
+  if(!x)return 'Deine Antwort: noch offen';
+  let s='Deine Antwort: '+STATUS[x.status];
+  if(x.status==='ja'&&typeOf(e).rides){
+    if(x.ride==='drive'){const r=Object.keys(P).filter(u=>P[u].with===me.id).map(u=>userById(u)?.name).filter(Boolean);
+      s+='\nDu fährst ('+x.seats+' Plätze)'+(r.length?', Mitfahrer: '+r.join(', '):'')}
+    else if(x.ride==='need')s+=x.with?'\nDu fährst bei '+(userById(x.with)?.name||'jemandem')+' mit':'\nDu suchst noch eine Mitfahrt'}
+  return s}
 function dlIcs(e){const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([icsText(e)],{type:'text/calendar;charset=utf-8'}));
   a.download=(e.title.replace(/[^\wäöüÄÖÜß-]+/g,'_')||'termin')+'.ics';
@@ -1077,14 +1127,14 @@ function viewEdit(id){
       <h4>Einzelne Personen</h4>${picker('iu',db.users,myInv.filter(x=>x.user_id&&!x.exclude).map(x=>x.user_id))}
       ${exHtml('ix')}
     </details>`:''}
-    <label>Veranstaltungsort<input name="location" maxlength="150" list="places" value="${esc(e.location)}"></label>
-    <div class="row"><label>Treffpunkt (optional)<input name="meet_place" maxlength="150" list="places" value="${esc(e.meet_place||'')}" placeholder="wenn anders als der Ort"></label>
+    <label>Veranstaltungsort<input name="location" maxlength="150" value="${esc(e.location)}"></label>
+    <div class="row"><label>Treffpunkt (optional)<input name="meet_place" maxlength="150" value="${esc(e.meet_place||'')}" placeholder="wenn anders als der Ort"></label>
       <label>Treffzeit (optional)<input type="time" name="meet_time" value="${esc(e.meet_time||'')}"></label></div>
-    <datalist id="places">${[...new Set(db.events.flatMap(x=>[x.location,x.meet_place]).filter(Boolean))].sort().map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
     <label>Beschreibung<textarea name="desc" rows="4" maxlength="2000">${esc(e.desc)}</textarea></label>
     ${mediaField(pics,MAX_MEDIA-pics.length)}
     <div class="row between" style="margin-top:16px"><button>Speichern</button>${e.id?'<button type="button" class="danger" id="del">Löschen</button>':''}</div><p class="err" id="err"></p></form>`;
-  const f=$('#ef');
+  const f=$('#ef'), own=[...new Set(db.events.flatMap(x=>[x.location,x.meet_place]).filter(Boolean))].sort();
+  addrPick(f.elements.location,own);addrPick(f.elements.meet_place,own);
   exPick(f,'ig','iu','ix',myInv.filter(x=>x.exclude).map(x=>x.user_id));
   f.onclick=async ev=>{const b=ev.target.closest('[data-mdel]');if(!b)return;
     const {error}=await sb.from('media').delete().eq('id',b.dataset.mdel);
