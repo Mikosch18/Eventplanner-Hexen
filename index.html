@@ -284,7 +284,29 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const showErr=(m,ok)=>{const e=$('#err');if(!e)return alert(de(m));e.textContent=de(m);e.className=ok?'ok':'err'};
 const here=()=>location.origin+location.pathname;
 const today=()=>new Date().toLocaleDateString('sv');
-const fmt=e=>new Date(e.date+'T'+(e.time||'00:00')).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})+(e.time?', '+e.time+' Uhr':'');
+const fmt=e=>new Date(e.date+'T'+(e.time||'00:00')).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})+(e.time?', '+e.time+(e.end_time?'–'+e.end_time:'')+' Uhr':'');
+// Kalenderdatei (RFC 5545). shortcut: Zeiten als Ortszeit ohne Zeitzone (= Ortszeit des Geräts), bei Nutzern außerhalb DE auf TZID umstellen
+const icsEsc=s=>String(s).replace(/[\\;,]/g,m=>'\\'+m).replace(/\r?\n/g,'\\n');
+const icsFold=l=>{let o='',n=0;for(const c of l){const b=new TextEncoder().encode(c).length;if(n+b>75){o+='\r\n ';n=1}o+=c;n+=b}return o};
+const icsDay=t=>t.toLocaleDateString('sv').replace(/-/g,'');
+function icsText(e){
+  let when;
+  if(!e.time){const n=new Date(e.date+'T12:00');n.setDate(n.getDate()+1);
+    when=['DTSTART;VALUE=DATE:'+e.date.replace(/-/g,''),'DTEND;VALUE=DATE:'+icsDay(n)]}   // ganztägig: Ende = Folgetag (exklusiv)
+  else{const s=new Date(e.date+'T'+e.time), x=new Date(s), f=t=>icsDay(t)+'T'+t.toTimeString().slice(0,8).replace(/:/g,'');
+    if(e.end_time){const [h,m]=e.end_time.split(':');x.setHours(+h,+m);if(x<=s)x.setDate(x.getDate()+1)}else x.setHours(x.getHours()+2);
+    when=['DTSTART:'+f(s),'DTEND:'+f(x)]}
+  const url=here()+'#event/'+e.id;
+  const desc=[e.desc,e.deadline&&'Anmeldung bis '+fmtDT(e.deadline),url].filter(Boolean).join('\n\n');
+  return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ClubFunk//DE','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
+    'UID:'+e.id+'@clubfunk','DTSTAMP:'+new Date().toISOString().replace(/[-:]|\.\d+/g,''),...when,'SUMMARY:'+icsEsc(e.title),
+    ...(e.location?['LOCATION:'+icsEsc(e.location)]:[]),'DESCRIPTION:'+icsEsc(desc),'URL:'+url,'END:VEVENT','END:VCALENDAR']
+    .map(icsFold).join('\r\n')+'\r\n';
+}
+function dlIcs(e){const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([icsText(e)],{type:'text/calendar;charset=utf-8'}));
+  a.download=(e.title.replace(/[^\wäöüÄÖÜß-]+/g,'_')||'termin')+'.ics';
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 const fmtDT=d=>new Date(d).toLocaleString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' Uhr';
 const toLocalInput=d=>{const x=new Date(d);x.setMinutes(x.getMinutes()-x.getTimezoneOffset());return x.toISOString().slice(0,16)};
 const opts=(o,sel)=>Object.entries(o).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${v}</option>`).join('');
@@ -518,7 +540,7 @@ async function loadAll(){
   db.invites=ei.error||!feat('invites')?[]:ei.data;   // ohne Migration 014 oder abgeschaltet: keine Anfragen
   db.users=u.data.filter(x=>x.is_owner||rolesOf(x.id).length).map(withNick).sort((a,b)=>a.name.localeCompare(b.name,'de'));
   db.roles=r.data; db.types=t.data;
-  db.events=e.data.map(x=>({...x,time:x.time?x.time.slice(0,5):'',desc:x.descr||'',location:x.location||''}));
+  db.events=e.data.map(x=>({...x,time:x.time?x.time.slice(0,5):'',end_time:x.end_time?x.end_time.slice(0,5):'',desc:x.descr||'',location:x.location||''}));
   db.parts={};
   for(const x of p.data)(db.parts[x.event_id]??={})[x.user_id]={status:x.status,ride:x.ride,seats:x.seats,with:x.with_id||'',note:x.note||'',by:x.updated_by||''};
 }
@@ -600,7 +622,7 @@ async function logout(){loginMsg='';hint.innerHTML='';
 // ---------- Zwei-Faktor-Anmeldung ----------
 // Supabase prüft den Code; die DB-Regeln sehen die erreichte Stufe im Token (aal1 / aal2).
 const factors=async()=>((await sb.auth.mfa.listFactors()).data?.totp||[]).filter(f=>f.status==='verified');
-const NEED_DB=32;   // bei jeder neuen Migration hier UND in der Migration hochzählen
+const NEED_DB=33;   // bei jeder neuen Migration hier UND in der Migration hochzählen
 let dbState={v:null,ok:true,missing:[]};
 async function checkDb(){
   // db_check() legt pruefen.sql an und nennt jede fehlende Datei einzeln – genauer als die Versionsnummer,
@@ -970,7 +992,7 @@ function viewEvent(id,forUser=me.id){
       :cand.length?`<div class="row"><select id="resu" aria-label="Person" style="flex:1">${cand.map(u=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}</select>
         <button type="button" id="resadd">Reservieren</button></div>`:'<p class="muted small">Niemand mehr zur Auswahl.</p>'}</div>`:'';
   app.innerHTML=`<a href="#events" class="back">Alle Termine</a>
-  <div class="card"><div class="row between">${badge(e)}${canEdit(e)?`<a class="btn sec" href="#edit/${esc(e.id)}">Bearbeiten</a>`:''}</div>
+  <div class="card"><div class="row between">${badge(e)}<div class="row"><button type="button" class="sec" id="ics" title="Termin als Kalenderdatei (.ics) herunterladen">📅 Kalender</button>${canEdit(e)?`<a class="btn sec" href="#edit/${esc(e.id)}">Bearbeiten</a>`:''}</div></div>
     <h2 style="margin-top:8px">${esc(e.title)}</h2>
     <div class="chips"><span class="chip">🗓 ${esc(fmt(e))}</span>${e.location?`<span class="chip">📍 ${esc(e.location)}</span>`:''}
       ${e.deadline?`<span class="chip ${closed(e)?'danger':''}">${closed(e)?'🔒 Anmeldung geschlossen seit':'⏰ Anmeldung bis'} ${esc(fmtDT(e.deadline))}</span>`:''}
@@ -1002,6 +1024,7 @@ function viewEvent(id,forUser=me.id){
           rs.length?' · 🎟 reserviert: '+rs.join(', '):''}</div></div><span class="chip">${free(parts,u.id,null,resv)} frei</span></div>`}).join('')||'<p class="muted">Noch keine Fahrer.</p>'}
       ${open.length?`<div class="notice">🙋 Suchen noch Mitfahrt: ${open.map(u=>esc(u.name)).join(', ')}</div>`:''}</div>`:''}
   </div></div>`;
+  $('#ics').onclick=()=>dlIcs(e);
   const f=$('#pf'), el=f.elements;
   const sync=()=>{if(!t.rides)return;const st=el.status.value, r=el.ride.value;
     f.querySelector('[data-ja]').hidden=st!=='ja';
@@ -1032,7 +1055,7 @@ function viewEdit(id){
   app.innerHTML=`<a href="#${e.id?'event/'+esc(e.id):'events'}" class="back">${e.id?'Zum Termin':'Alle Termine'}</a><form id="ef" class="card narrow"><h2>${e.id?'Termin bearbeiten':'Neuer Termin'}</h2>
     <label>Titel<input name="title" required maxlength="100" value="${esc(e.title)}"></label>
     <label>Art<select name="type_id"><option value="">Ohne Art</option>${db.types.map(t=>`<option value="${esc(t.id)}" ${e.type_id===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}</select></label>
-    <div class="row"><label>Datum<input type="date" name="date" required value="${esc(e.date)}"></label><label>Uhrzeit<input type="time" name="time" value="${esc(e.time)}"></label></div>
+    <div class="row"><label>Datum<input type="date" name="date" required value="${esc(e.date)}"></label><label>Uhrzeit<input type="time" name="time" value="${esc(e.time)}"></label><label>bis (optional)<input type="time" name="end_time" value="${esc(e.end_time||'')}"></label></div>
     <div class="row"><label>Anmeldeschluss (optional)<input type="datetime-local" name="deadline" value="${e.deadline?esc(toLocalInput(e.deadline)):''}"></label>
       <label>Max. Teilnehmer (optional)<input type="number" name="max" min="1" max="10000" value="${e.max_parts??''}" placeholder="unbegrenzt"></label></div>
     ${e.id?sw('arch','1','📦 Im Archiv (taucht nur noch unter „Archiv" auf)',!!e.archived_at):''}
@@ -1059,6 +1082,7 @@ function viewEdit(id){
       location:v.location.trim()||null,descr:v.desc.trim()||null};
     // nur mitschicken, wenn genutzt – sonst scheitert jedes Speichern, solange 017 fehlt
     if(v.max||e.max_parts!=null)row.max_parts=v.max?parseInt(v.max,10):null;
+    if(v.end_time||e.end_time)row.end_time=v.time&&v.end_time||null;   // „bis" nur mit Uhrzeit; ohne 027 nicht mitschicken
     if(e.id)row.archived_at=f.elements.arch.checked?(e.archived_at||new Date().toISOString()):null;
     const q=e.id?sb.from('events').update(row).eq('id',e.id):sb.from('events').insert(row);  // created_by setzt die DB
     const {data,error}=await q.select().single();
@@ -1880,7 +1904,7 @@ const TBL={events:'Termin',parts:'Teilnahme',profiles:'Benutzer',roles:'Rolle',e
   post_targets:'Zielgruppe',media:'Bild',app_settings:'Einstellungen',event_invites:'Anfrage',backup:'Backup',profile_roles:'Rollen-Zuordnung',
   ride_reservations:'Platzreservierung'};
 const OPS={INSERT:'erstellt',UPDATE:'geändert',DELETE:'gelöscht',EXPORT:'heruntergeladen',IMPORT:'eingespielt'};
-const FIELDS={title:'Titel',type_id:'Art',date:'Datum',time:'Uhrzeit',deadline:'Anmeldeschluss',max_parts:'Max. Teilnehmer',location:'Ort',descr:'Beschreibung',status:'Status',ride:'Anreise',seats:'Plätze',
+const FIELDS={title:'Titel',type_id:'Art',date:'Datum',time:'Uhrzeit',end_time:'bis',deadline:'Anmeldeschluss',max_parts:'Max. Teilnehmer',location:'Ort',descr:'Beschreibung',status:'Status',ride:'Anreise',seats:'Plätze',
   with_id:'Fährt mit',note:'Notiz',name:'Name',role_id:'Rolle',is_owner:'Besitzer',perms:'Rechte',color:'Farbe',rides:'Fahrgemeinschaften',
   body:'Text',audience:'Sichtbarkeit',pinned:'Angepinnt',kind:'Umfrage-Art',anon:'Anonym',closes_at:'Frist',logo_url:'Logo',
   theme:'Erscheinungsbild',accent:'Akzentfarbe',bg_url:'Hintergrundbild',archived_at:'Archiv',
