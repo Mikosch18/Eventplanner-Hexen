@@ -328,7 +328,7 @@ function addrPick(inp,own){
   inp.addEventListener('blur',leave);box.addEventListener('focusout',leave);
 }
 // Karten-App des Geräts mit der Adresse (kein Dienst, kein Schlüssel)
-const mapUrl=a=>(isIOS()?'https://maps.apple.com/?q=':'https://www.google.com/maps/search/?api=1&query=')+encodeURIComponent(a);
+const mapUrl=a=>(isIOS()?'https://maps.apple.com/?q=':'https://www.google.com/maps/search/?api=1&query=')+encodeURIComponent(a).replace(/%20/g,'+');
 const route=a=>`<a href="${esc(mapUrl(a))}" target="_blank" rel="noopener" class="route" aria-label="Route zu ${esc(a)}">🗺 Route</a>`;
 const lastDay=e=>e.end_date||e.date;   // mehrtägig: bis zum letzten Tag „kommend"
 // Kalenderdatei (RFC 5545). shortcut: Zeiten als Ortszeit ohne Zeitzone (= Ortszeit des Geräts), bei Nutzern außerhalb DE auf TZID umstellen
@@ -345,18 +345,26 @@ function icsText(e){
     else if(e.end_time){const [h,m]=e.end_time.split(':');x.setHours(+h,+m);if(x<=s)x.setDate(x.getDate()+1)}else x.setHours(x.getHours()+2);
     when=['DTSTART:'+f(s),'DTEND:'+f(x)]}
   const url=here()+'#event/'+e.id;
-  const desc=[meetText(e)&&'Treffen: '+meetText(e)+(e.meet_place?'\nKarte: '+mapUrl(e.meet_place):''),
-    e.location&&'Ort: '+e.location+'\nKarte: '+mapUrl(e.location),e.type_id&&'Art: '+typeOf(e).name,icsMe(e),
-    e.deadline&&'Anmeldung bis '+fmtDT(e.deadline),e.desc,'In der App: '+url].filter(Boolean).join('\n\n');
+  // Abschnitte [Überschrift, Text, Kartenlink]; Text-Fassung für alle Kalender, HTML-Fassung (X-ALT-DESC) zeigt Outlook
+  const places=[meetText(e)&&['Treffen',meetText(e),e.meet_place&&mapUrl(e.meet_place)],e.location&&['Ort',e.location,mapUrl(e.location)]].filter(Boolean);
+  const facts=[e.type_id&&['Art',typeOf(e).name],['Deine Antwort',icsMe(e)],e.deadline&&['Anmeldung bis',fmtDT(e.deadline)]].filter(Boolean);
+  const app='In '+brand.name+' öffnen';
+  const desc=[...places.map(([k,v,l])=>k+': '+v+(l?'\n→ Route: '+l:'')),facts.map(([k,v])=>k+': '+v).join('\n'),e.desc,app+': '+url]
+    .filter(Boolean).join('\n\n');
+  const br=s=>esc(s).replace(/\n/g,'<br>'), lnk=(h,t)=>`<a href="${esc(h)}">${esc(t)}</a>`;
+  const html='<html><body style="font-family:Segoe UI,Arial,sans-serif;font-size:11pt">'
+    +places.map(([k,v,l])=>`<p><b>${k}:</b> ${br(v)}${l?' · '+lnk(l,'Route'):''}</p>`).join('')
+    +`<p>${facts.map(([k,v])=>`<b>${k}:</b> ${br(v)}`).join('<br>')}</p>`
+    +(e.desc?`<p>${br(e.desc)}</p>`:'')+`<p>${lnk(url,app)}</p></body></html>`;
   return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ClubFunk//DE','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
     'UID:'+e.id+'@clubfunk','DTSTAMP:'+new Date().toISOString().replace(/[-:]|\.\d+/g,''),...when,'SUMMARY:'+icsEsc(e.title),
-    ...(e.location?['LOCATION:'+icsEsc(e.location)]:[]),'DESCRIPTION:'+icsEsc(desc),'URL:'+url,'END:VEVENT','END:VCALENDAR']
+    ...(e.location?['LOCATION:'+icsEsc(e.location)]:[]),'DESCRIPTION:'+icsEsc(desc),'X-ALT-DESC;FMTTYPE=text/html:'+icsEsc(html),'URL:'+url,'END:VEVENT','END:VCALENDAR']
     .map(icsFold).join('\r\n')+'\r\n';
 }
 // Stand beim Herunterladen – spätere Änderungen an Antwort/Mitfahrt stehen nicht im Kalender
 function icsMe(e){const P=db.parts[e.id]||{}, x=P[me.id];
-  if(!x)return 'Deine Antwort: noch offen';
-  let s='Deine Antwort: '+STATUS[x.status];
+  if(!x)return 'noch offen';
+  let s=STATUS[x.status].replace(/^\S+\s+/,'');   // ohne Emoji – Outlook zeigt es verrutscht
   if(x.status==='ja'&&typeOf(e).rides){
     if(x.ride==='drive'){const r=Object.keys(P).filter(u=>P[u].with===me.id).map(u=>userById(u)?.name).filter(Boolean);
       s+='\nDu fährst ('+x.seats+' Plätze)'+(r.length?', Mitfahrer: '+r.join(', '):'')}
