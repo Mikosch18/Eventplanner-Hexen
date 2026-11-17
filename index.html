@@ -925,8 +925,10 @@ async function accountDialog(){
 async function viewLogin(mode='login'){
   const T={login:'Anmelden',reg:'Registrieren',reset:'Passwort vergessen'};
   app.innerHTML=`<form id="f" class="card narrow" style="margin-top:6vh">
-    <div style="text-align:center;margin-bottom:6px"><img src="${esc(brand.logo_url||'logo.svg')}" alt="" style="max-height:72px;max-width:100%;border-radius:${brand.logo_url?10:16}px">
-      <div style="font-weight:750;font-size:19px;margin-top:4px">${esc(brand.name)}</div></div>
+    <div style="text-align:center;margin-bottom:6px">${!brand.logo_url&&brand.name===BRAND_DEF.name
+      ?`<img id="logobig" src="logo-gross.svg" alt="${esc(brand.name)}" style="width:160px;max-width:100%;border-radius:28px">`
+      :`<img src="${esc(brand.logo_url||'logo.svg')}" alt="" style="max-height:72px;max-width:100%;border-radius:${brand.logo_url?10:16}px">
+      <div style="font-weight:750;font-size:19px;margin-top:4px">${esc(brand.name)}</div>`}</div>
     <h2>${T[mode]}</h2>
     ${mode==='reg'?`<div class="row"><label>Vorname<input name="fn" required maxlength="50" autocomplete="given-name"></label>
       <label>Nachname<input name="ln" required maxlength="50" autocomplete="family-name"></label></div>
