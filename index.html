@@ -284,17 +284,22 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const showErr=(m,ok)=>{const e=$('#err');if(!e)return alert(de(m));e.textContent=de(m);e.className=ok?'ok':'err'};
 const here=()=>location.origin+location.pathname;
 const today=()=>new Date().toLocaleDateString('sv');
-const fmt=e=>new Date(e.date+'T'+(e.time||'00:00')).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})+(e.time?', '+e.time+(e.end_time?'–'+e.end_time:'')+' Uhr':'');
+const fmtD=d=>new Date(d+'T00:00').toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
+const fmt=e=>e.end_date?fmtD(e.date)+(e.time?', '+e.time+' Uhr':'')+' – '+fmtD(e.end_date)+(e.end_time?', '+e.end_time+' Uhr':'')
+  :fmtD(e.date)+(e.time?', '+e.time+(e.end_time?'–'+e.end_time:'')+' Uhr':'');
+const lastDay=e=>e.end_date||e.date;   // mehrtägig: bis zum letzten Tag „kommend"
 // Kalenderdatei (RFC 5545). shortcut: Zeiten als Ortszeit ohne Zeitzone (= Ortszeit des Geräts), bei Nutzern außerhalb DE auf TZID umstellen
 const icsEsc=s=>String(s).replace(/[\\;,]/g,m=>'\\'+m).replace(/\r?\n/g,'\\n');
 const icsFold=l=>{let o='',n=0;for(const c of l){const b=new TextEncoder().encode(c).length;if(n+b>75){o+='\r\n ';n=1}o+=c;n+=b}return o};
 const icsDay=t=>t.toLocaleDateString('sv').replace(/-/g,'');
 function icsText(e){
   let when;
-  if(!e.time){const n=new Date(e.date+'T12:00');n.setDate(n.getDate()+1);
-    when=['DTSTART;VALUE=DATE:'+e.date.replace(/-/g,''),'DTEND;VALUE=DATE:'+icsDay(n)]}   // ganztägig: Ende = Folgetag (exklusiv)
-  else{const s=new Date(e.date+'T'+e.time), x=new Date(s), f=t=>icsDay(t)+'T'+t.toTimeString().slice(0,8).replace(/:/g,'');
-    if(e.end_time){const [h,m]=e.end_time.split(':');x.setHours(+h,+m);if(x<=s)x.setDate(x.getDate()+1)}else x.setHours(x.getHours()+2);
+  if(!e.time){const n=new Date(lastDay(e)+'T12:00');n.setDate(n.getDate()+1);
+    when=['DTSTART;VALUE=DATE:'+e.date.replace(/-/g,''),'DTEND;VALUE=DATE:'+icsDay(n)]}   // ganztägig: Ende = Tag nach dem letzten (exklusiv)
+  else{const s=new Date(e.date+'T'+e.time), f=t=>icsDay(t)+'T'+t.toTimeString().slice(0,8).replace(/:/g,'');
+    let x=new Date(s);
+    if(e.end_date){x=new Date(e.end_date+'T'+(e.end_time||'00:00'));if(!e.end_time)x.setDate(x.getDate()+1)}   // ohne Uhrzeit: Ende des Tages
+    else if(e.end_time){const [h,m]=e.end_time.split(':');x.setHours(+h,+m);if(x<=s)x.setDate(x.getDate()+1)}else x.setHours(x.getHours()+2);
     when=['DTSTART:'+f(s),'DTEND:'+f(x)]}
   const url=here()+'#event/'+e.id;
   const desc=[e.desc,e.deadline&&'Anmeldung bis '+fmtDT(e.deadline),url].filter(Boolean).join('\n\n');
@@ -392,7 +397,7 @@ const groupById=id=>db.groups.find(g=>g.id===id);
 const pollClosed=q=>!!q.closes_at&&new Date(q.closes_at)<new Date();
 // Archiv: von Hand gesetzt oder nach X Tagen automatisch – letzteres wird nur gerechnet, nichts in der DB verändert
 const daysAgo=n=>new Date(Date.now()-n*864e5).toLocaleDateString('sv');
-const evArchived=e=>!!e.archived_at||(brand.archive_events_days>0&&e.date<daysAgo(brand.archive_events_days));
+const evArchived=e=>!!e.archived_at||(brand.archive_events_days>0&&lastDay(e)<daysAgo(brand.archive_events_days));
 const postArchived=p=>!!p.archived_at||(brand.archive_posts_days>0&&p.created_at.slice(0,10)<daysAgo(brand.archive_posts_days));
 const optText=o=>o.at?fmtDT(o.at):o.label;
 
@@ -622,7 +627,7 @@ async function logout(){loginMsg='';hint.innerHTML='';
 // ---------- Zwei-Faktor-Anmeldung ----------
 // Supabase prüft den Code; die DB-Regeln sehen die erreichte Stufe im Token (aal1 / aal2).
 const factors=async()=>((await sb.auth.mfa.listFactors()).data?.totp||[]).filter(f=>f.status==='verified');
-const NEED_DB=33;   // bei jeder neuen Migration hier UND in der Migration hochzählen
+const NEED_DB=34;   // bei jeder neuen Migration hier UND in der Migration hochzählen
 let dbState={v:null,ok:true,missing:[]};
 async function checkDb(){
   // db_check() legt pruefen.sql an und nennt jede fehlende Datei einzeln – genauer als die Versionsnummer,
@@ -918,7 +923,7 @@ function viewList(mine){
       const x=db.parts[e.id]?.[me.id], stat=x?x.status:'offen', arch=evArchived(e);
       return (flt.when==='archive'?arch:!arch)
         &&!flt.hideTypes.includes(e.type_id||'')
-        &&(flt.when!=='upcoming'||e.date>=now)&&(flt.when!=='past'||e.date<now)
+        &&(flt.when!=='upcoming'||lastDay(e)>=now)&&(flt.when!=='past'||lastDay(e)<now)
         &&(mine?['ja','vielleicht'].includes(stat):!flt.hideSt.includes(stat))
         &&(mine||!flt.inv||invitedIds(e.id).includes(me.id))
         &&hits(`${e.title} ${e.location} ${e.desc} ${typeOf(e).name}`,q)});
@@ -942,7 +947,7 @@ function card(e){
   const inv=invitedIds(e.id), mineInv=inv.includes(me.id);
   const yesInv=inv.filter(id=>db.parts[e.id]?.[id]?.status==='ja').length;
   const dl=capChip(e)+(!e.deadline?'':closed(e)?'<span class="chip danger">🔒 Anmeldung geschlossen</span>':`<span class="chip">⏰ Anmeldung bis ${esc(fmtDT(e.deadline))}</span>`);
-  return `<a class="card ${e.date<today()?'past':''}" href="#event/${esc(e.id)}">
+  return `<a class="card ${lastDay(e)<today()?'past':''}" href="#event/${esc(e.id)}">
     <div class="row between">${badge(e)}<span class="muted small">${esc(fmt(e))}</span></div>
     <h3>${esc(e.title)}</h3>${e.location?`<div class="muted small">📍 ${esc(e.location)}</div>`:''}
     <div class="chips">${can('view.yes')?`<span class="chip">✅ ${s.yes} dabei</span>`:''}${can('view.maybe')&&s.maybe?`<span class="chip">❔ ${s.maybe} vielleicht</span>`:''}
@@ -1055,7 +1060,8 @@ function viewEdit(id){
   app.innerHTML=`<a href="#${e.id?'event/'+esc(e.id):'events'}" class="back">${e.id?'Zum Termin':'Alle Termine'}</a><form id="ef" class="card narrow"><h2>${e.id?'Termin bearbeiten':'Neuer Termin'}</h2>
     <label>Titel<input name="title" required maxlength="100" value="${esc(e.title)}"></label>
     <label>Art<select name="type_id"><option value="">Ohne Art</option>${db.types.map(t=>`<option value="${esc(t.id)}" ${e.type_id===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}</select></label>
-    <div class="row"><label>Datum<input type="date" name="date" required value="${esc(e.date)}"></label><label>Uhrzeit<input type="time" name="time" value="${esc(e.time)}"></label><label>bis (optional)<input type="time" name="end_time" value="${esc(e.end_time||'')}"></label></div>
+    <div class="row"><label>Datum<input type="date" name="date" required value="${esc(e.date)}"></label><label>Uhrzeit<input type="time" name="time" value="${esc(e.time)}"></label></div>
+    <div class="row"><label>Ende – Datum (optional, mehrtägig)<input type="date" name="end_date" value="${esc(e.end_date||'')}"></label><label>Ende – Uhrzeit (optional)<input type="time" name="end_time" value="${esc(e.end_time||'')}"></label></div>
     <div class="row"><label>Anmeldeschluss (optional)<input type="datetime-local" name="deadline" value="${e.deadline?esc(toLocalInput(e.deadline)):''}"></label>
       <label>Max. Teilnehmer (optional)<input type="number" name="max" min="1" max="10000" value="${e.max_parts??''}" placeholder="unbegrenzt"></label></div>
     ${e.id?sw('arch','1','📦 Im Archiv (taucht nur noch unter „Archiv" auf)',!!e.archived_at):''}
@@ -1083,6 +1089,8 @@ function viewEdit(id){
     // nur mitschicken, wenn genutzt – sonst scheitert jedes Speichern, solange 017 fehlt
     if(v.max||e.max_parts!=null)row.max_parts=v.max?parseInt(v.max,10):null;
     if(v.end_time||e.end_time)row.end_time=v.time&&v.end_time||null;   // „bis" nur mit Uhrzeit; ohne 027 nicht mitschicken
+    if(v.end_date&&v.end_date<v.date)return showErr('Das Ende liegt vor dem Beginn.');
+    if(v.end_date||e.end_date)row.end_date=v.end_date>v.date?v.end_date:null;   // gleicher Tag = eintägig
     if(e.id)row.archived_at=f.elements.arch.checked?(e.archived_at||new Date().toISOString()):null;
     const q=e.id?sb.from('events').update(row).eq('id',e.id):sb.from('events').insert(row);  // created_by setzt die DB
     const {data,error}=await q.select().single();
@@ -1904,7 +1912,7 @@ const TBL={events:'Termin',parts:'Teilnahme',profiles:'Benutzer',roles:'Rolle',e
   post_targets:'Zielgruppe',media:'Bild',app_settings:'Einstellungen',event_invites:'Anfrage',backup:'Backup',profile_roles:'Rollen-Zuordnung',
   ride_reservations:'Platzreservierung'};
 const OPS={INSERT:'erstellt',UPDATE:'geändert',DELETE:'gelöscht',EXPORT:'heruntergeladen',IMPORT:'eingespielt'};
-const FIELDS={title:'Titel',type_id:'Art',date:'Datum',time:'Uhrzeit',end_time:'bis',deadline:'Anmeldeschluss',max_parts:'Max. Teilnehmer',location:'Ort',descr:'Beschreibung',status:'Status',ride:'Anreise',seats:'Plätze',
+const FIELDS={title:'Titel',type_id:'Art',date:'Datum',time:'Uhrzeit',end_time:'bis',end_date:'bis Datum',deadline:'Anmeldeschluss',max_parts:'Max. Teilnehmer',location:'Ort',descr:'Beschreibung',status:'Status',ride:'Anreise',seats:'Plätze',
   with_id:'Fährt mit',note:'Notiz',name:'Name',role_id:'Rolle',is_owner:'Besitzer',perms:'Rechte',color:'Farbe',rides:'Fahrgemeinschaften',
   body:'Text',audience:'Sichtbarkeit',pinned:'Angepinnt',kind:'Umfrage-Art',anon:'Anonym',closes_at:'Frist',logo_url:'Logo',
   theme:'Erscheinungsbild',accent:'Akzentfarbe',bg_url:'Hintergrundbild',archived_at:'Archiv',
