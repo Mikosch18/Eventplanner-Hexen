@@ -141,6 +141,7 @@ a.card:hover{border-color:color-mix(in srgb,var(--acc) 45%,var(--line));transfor
   background:color-mix(in srgb,var(--c,#6b7280) 18%,transparent);color:color-mix(in srgb,var(--c,#6b7280) 72%,var(--fg))}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .chip{font-size:12.5px;padding:4px 10px;border-radius:999px;background:color-mix(in srgb,var(--fg) 5%,transparent);border:1px solid var(--line)}
+.chip a.route{margin-left:4px;white-space:nowrap}
 .chip.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
 .chip.danger{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,transparent)}
 .me{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:14px}.me.open{color:var(--warn);font-weight:600}
@@ -287,6 +288,9 @@ const today=()=>new Date().toLocaleDateString('sv');
 const fmtD=d=>new Date(d+'T00:00').toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
 const fmt=e=>e.end_date?fmtD(e.date)+(e.time?', '+e.time+' Uhr':'')+' – '+fmtD(e.end_date)+(e.end_time?', '+e.end_time+' Uhr':'')
   :fmtD(e.date)+(e.time?', '+e.time+(e.end_time?'–'+e.end_time:'')+' Uhr':'');
+const meetText=e=>[e.meet_time&&e.meet_time+' Uhr',e.meet_place].filter(Boolean).join(', ');
+// Karten-App des Geräts mit der Adresse (kein Dienst, kein Schlüssel)
+const route=a=>`<a href="${esc((isIOS()?'https://maps.apple.com/?q=':'https://www.google.com/maps/search/?api=1&query=')+encodeURIComponent(a))}" target="_blank" rel="noopener" class="route" aria-label="Route zu ${esc(a)}">🗺 Route</a>`;
 const lastDay=e=>e.end_date||e.date;   // mehrtägig: bis zum letzten Tag „kommend"
 // Kalenderdatei (RFC 5545). shortcut: Zeiten als Ortszeit ohne Zeitzone (= Ortszeit des Geräts), bei Nutzern außerhalb DE auf TZID umstellen
 const icsEsc=s=>String(s).replace(/[\\;,]/g,m=>'\\'+m).replace(/\r?\n/g,'\\n');
@@ -302,7 +306,7 @@ function icsText(e){
     else if(e.end_time){const [h,m]=e.end_time.split(':');x.setHours(+h,+m);if(x<=s)x.setDate(x.getDate()+1)}else x.setHours(x.getHours()+2);
     when=['DTSTART:'+f(s),'DTEND:'+f(x)]}
   const url=here()+'#event/'+e.id;
-  const desc=[e.desc,e.deadline&&'Anmeldung bis '+fmtDT(e.deadline),url].filter(Boolean).join('\n\n');
+  const desc=[meetText(e)&&'Treffen: '+meetText(e),e.desc,e.deadline&&'Anmeldung bis '+fmtDT(e.deadline),url].filter(Boolean).join('\n\n');
   return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ClubFunk//DE','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
     'UID:'+e.id+'@clubfunk','DTSTAMP:'+new Date().toISOString().replace(/[-:]|\.\d+/g,''),...when,'SUMMARY:'+icsEsc(e.title),
     ...(e.location?['LOCATION:'+icsEsc(e.location)]:[]),'DESCRIPTION:'+icsEsc(desc),'URL:'+url,'END:VEVENT','END:VCALENDAR']
@@ -545,7 +549,7 @@ async function loadAll(){
   db.invites=ei.error||!feat('invites')?[]:ei.data;   // ohne Migration 014 oder abgeschaltet: keine Anfragen
   db.users=u.data.filter(x=>x.is_owner||rolesOf(x.id).length).map(withNick).sort((a,b)=>a.name.localeCompare(b.name,'de'));
   db.roles=r.data; db.types=t.data;
-  db.events=e.data.map(x=>({...x,time:x.time?x.time.slice(0,5):'',end_time:x.end_time?x.end_time.slice(0,5):'',desc:x.descr||'',location:x.location||''}));
+  db.events=e.data.map(x=>({...x,time:x.time?x.time.slice(0,5):'',end_time:x.end_time?x.end_time.slice(0,5):'',meet_time:x.meet_time?x.meet_time.slice(0,5):'',meet_place:x.meet_place||'',desc:x.descr||'',location:x.location||''}));
   db.parts={};
   for(const x of p.data)(db.parts[x.event_id]??={})[x.user_id]={status:x.status,ride:x.ride,seats:x.seats,with:x.with_id||'',note:x.note||'',by:x.updated_by||''};
 }
@@ -627,7 +631,7 @@ async function logout(){loginMsg='';hint.innerHTML='';
 // ---------- Zwei-Faktor-Anmeldung ----------
 // Supabase prüft den Code; die DB-Regeln sehen die erreichte Stufe im Token (aal1 / aal2).
 const factors=async()=>((await sb.auth.mfa.listFactors()).data?.totp||[]).filter(f=>f.status==='verified');
-const NEED_DB=34;   // bei jeder neuen Migration hier UND in der Migration hochzählen
+const NEED_DB=35;   // bei jeder neuen Migration hier UND in der Migration hochzählen
 let dbState={v:null,ok:true,missing:[]};
 async function checkDb(){
   // db_check() legt pruefen.sql an und nennt jede fehlende Datei einzeln – genauer als die Versionsnummer,
@@ -926,7 +930,7 @@ function viewList(mine){
         &&(flt.when!=='upcoming'||lastDay(e)>=now)&&(flt.when!=='past'||lastDay(e)<now)
         &&(mine?['ja','vielleicht'].includes(stat):!flt.hideSt.includes(stat))
         &&(mine||!flt.inv||invitedIds(e.id).includes(me.id))
-        &&hits(`${e.title} ${e.location} ${e.desc} ${typeOf(e).name}`,q)});
+        &&hits(`${e.title} ${e.location} ${e.meet_place} ${e.desc} ${typeOf(e).name}`,q)});
     if(flt.when==='past')evs=evs.reverse();
     $('#cnt').textContent=evs.length===db.events.length?`${evs.length} ${evs.length===1?'Termin':'Termine'}`:`${evs.length} von ${db.events.length} Terminen`;
     $('#list').innerHTML=evs.length?`<div class="grid">${evs.map(card).join('')}</div>`
@@ -949,7 +953,7 @@ function card(e){
   const dl=capChip(e)+(!e.deadline?'':closed(e)?'<span class="chip danger">🔒 Anmeldung geschlossen</span>':`<span class="chip">⏰ Anmeldung bis ${esc(fmtDT(e.deadline))}</span>`);
   return `<a class="card ${lastDay(e)<today()?'past':''}" href="#event/${esc(e.id)}">
     <div class="row between">${badge(e)}<span class="muted small">${esc(fmt(e))}</span></div>
-    <h3>${esc(e.title)}</h3>${e.location?`<div class="muted small">📍 ${esc(e.location)}</div>`:''}
+    <h3>${esc(e.title)}</h3>${e.location?`<div class="muted small">📍 ${esc(e.location)}</div>`:''}${meetText(e)?`<div class="muted small">🚩 Treffen ${esc(meetText(e))}</div>`:''}
     <div class="chips">${can('view.yes')?`<span class="chip">✅ ${s.yes} dabei</span>`:''}${can('view.maybe')&&s.maybe?`<span class="chip">❔ ${s.maybe} vielleicht</span>`:''}
       ${t.rides&&can('view.yes')?`<span class="chip">🚗 ${s.free} Plätze frei</span>${s.open?`<span class="chip warn">🙋 ${s.open} suchen Mitfahrt</span>`:''}`:''}${dl}
       ${inv.length&&can('view.yes')?`<span class="chip">🎯 ${yesInv} von ${inv.length} zugesagt</span>`:''}
@@ -999,7 +1003,8 @@ function viewEvent(id,forUser=me.id){
   app.innerHTML=`<a href="#events" class="back">Alle Termine</a>
   <div class="card"><div class="row between">${badge(e)}<div class="row"><button type="button" class="sec" id="ics" title="Termin als Kalenderdatei (.ics) herunterladen">📅 Kalender</button>${canEdit(e)?`<a class="btn sec" href="#edit/${esc(e.id)}">Bearbeiten</a>`:''}</div></div>
     <h2 style="margin-top:8px">${esc(e.title)}</h2>
-    <div class="chips"><span class="chip">🗓 ${esc(fmt(e))}</span>${e.location?`<span class="chip">📍 ${esc(e.location)}</span>`:''}
+    <div class="chips"><span class="chip">🗓 ${esc(fmt(e))}</span>${e.location?`<span class="chip">📍 ${esc(e.location)} ${route(e.location)}</span>`:''}
+      ${meetText(e)?`<span class="chip">🚩 Treffen ${esc(meetText(e))}${e.meet_place?' '+route(e.meet_place):''}</span>`:''}
       ${e.deadline?`<span class="chip ${closed(e)?'danger':''}">${closed(e)?'🔒 Anmeldung geschlossen seit':'⏰ Anmeldung bis'} ${esc(fmtDT(e.deadline))}</span>`:''}
       ${capChip(e)}${evArchived(e)?'<span class="chip">📦 Im Archiv</span>':''}</div>
     ${e.desc?`<p class="desc">${esc(e.desc)}</p>`:''}${gallery(mediaOf('event_id',e.id))}</div>
@@ -1072,7 +1077,10 @@ function viewEdit(id){
       <h4>Einzelne Personen</h4>${picker('iu',db.users,myInv.filter(x=>x.user_id&&!x.exclude).map(x=>x.user_id))}
       ${exHtml('ix')}
     </details>`:''}
-    <label>Ort / Treffpunkt<input name="location" maxlength="150" value="${esc(e.location)}"></label>
+    <label>Veranstaltungsort<input name="location" maxlength="150" list="places" value="${esc(e.location)}"></label>
+    <div class="row"><label>Treffpunkt (optional)<input name="meet_place" maxlength="150" list="places" value="${esc(e.meet_place||'')}" placeholder="wenn anders als der Ort"></label>
+      <label>Treffzeit (optional)<input type="time" name="meet_time" value="${esc(e.meet_time||'')}"></label></div>
+    <datalist id="places">${[...new Set(db.events.flatMap(x=>[x.location,x.meet_place]).filter(Boolean))].sort().map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
     <label>Beschreibung<textarea name="desc" rows="4" maxlength="2000">${esc(e.desc)}</textarea></label>
     ${mediaField(pics,MAX_MEDIA-pics.length)}
     <div class="row between" style="margin-top:16px"><button>Speichern</button>${e.id?'<button type="button" class="danger" id="del">Löschen</button>':''}</div><p class="err" id="err"></p></form>`;
@@ -1090,6 +1098,8 @@ function viewEdit(id){
     if(v.max||e.max_parts!=null)row.max_parts=v.max?parseInt(v.max,10):null;
     if(v.end_time||e.end_time)row.end_time=v.time&&v.end_time||null;   // „bis" nur mit Uhrzeit; ohne 027 nicht mitschicken
     if(v.end_date&&v.end_date<v.date)return showErr('Das Ende liegt vor dem Beginn.');
+    if(v.meet_place.trim()||e.meet_place)row.meet_place=v.meet_place.trim()||null;   // ohne 029 nicht mitschicken
+    if(v.meet_time||e.meet_time)row.meet_time=v.meet_time||null;
     if(v.end_date||e.end_date)row.end_date=v.end_date>v.date?v.end_date:null;   // gleicher Tag = eintägig
     if(e.id)row.archived_at=f.elements.arch.checked?(e.archived_at||new Date().toISOString()):null;
     const q=e.id?sb.from('events').update(row).eq('id',e.id):sb.from('events').insert(row);  // created_by setzt die DB
@@ -1912,7 +1922,7 @@ const TBL={events:'Termin',parts:'Teilnahme',profiles:'Benutzer',roles:'Rolle',e
   post_targets:'Zielgruppe',media:'Bild',app_settings:'Einstellungen',event_invites:'Anfrage',backup:'Backup',profile_roles:'Rollen-Zuordnung',
   ride_reservations:'Platzreservierung'};
 const OPS={INSERT:'erstellt',UPDATE:'geändert',DELETE:'gelöscht',EXPORT:'heruntergeladen',IMPORT:'eingespielt'};
-const FIELDS={title:'Titel',type_id:'Art',date:'Datum',time:'Uhrzeit',end_time:'bis',end_date:'bis Datum',deadline:'Anmeldeschluss',max_parts:'Max. Teilnehmer',location:'Ort',descr:'Beschreibung',status:'Status',ride:'Anreise',seats:'Plätze',
+const FIELDS={title:'Titel',type_id:'Art',date:'Datum',time:'Uhrzeit',end_time:'bis',end_date:'bis Datum',deadline:'Anmeldeschluss',max_parts:'Max. Teilnehmer',location:'Ort',meet_place:'Treffpunkt',meet_time:'Treffzeit',descr:'Beschreibung',status:'Status',ride:'Anreise',seats:'Plätze',
   with_id:'Fährt mit',note:'Notiz',name:'Name',role_id:'Rolle',is_owner:'Besitzer',perms:'Rechte',color:'Farbe',rides:'Fahrgemeinschaften',
   body:'Text',audience:'Sichtbarkeit',pinned:'Angepinnt',kind:'Umfrage-Art',anon:'Anonym',closes_at:'Frist',logo_url:'Logo',
   theme:'Erscheinungsbild',accent:'Akzentfarbe',bg_url:'Hintergrundbild',archived_at:'Archiv',
