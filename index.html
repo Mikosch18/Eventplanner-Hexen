@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Eventplaner</title>
+<title>ClubFunk</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
@@ -246,7 +246,7 @@ td select{margin:0;min-width:140px}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 </head>
 <body>
-<header><div class="hbar"><a class="brand" href="#board"><img class="logo" src="logo.svg" alt="">Eventplaner</a><nav class="main" id="nav"></nav><button id="mode" type="button" title="Hell / Dunkel / Automatisch"></button><div id="who" class="who"></div></div></header>
+<header><div class="hbar"><a class="brand" href="#board"><img class="logo" src="logo.svg" alt="">ClubFunk</a><nav class="main" id="nav"></nav><button id="mode" type="button" title="Hell / Dunkel / Automatisch"></button><div id="who" class="who"></div></div></header>
 <div id="hint"></div><main id="app"></main>
 <dialog id="dlg"></dialog>
 <script>
@@ -293,7 +293,7 @@ let db={users:[],roles:[],types:[],events:[],parts:{},posts:[],reads:[],
         groups:[],members:[],targets:[],polls:{},proles:[],pollOpts:[],results:{},myVotes:[],reactions:[],media:[],ideas:[],invites:[],resv:[],inbox:null};
 const IST={neu:'🆕 Neu',geplant:'📌 Geplant',umgesetzt:'✅ Umgesetzt',abgelehnt:'🚫 Abgelehnt'};
 // = Spalten-Defaults von app_settings; „↺ Standard" in den Einstellungen setzt darauf zurück (features null = alles an)
-const BRAND_DEF={name:'Eventplaner',logo_url:null,bg_url:null,theme:'glass',accent:'#4f46e5',
+const BRAND_DEF={name:'ClubFunk',logo_url:null,bg_url:null,theme:'glass',accent:'#4f46e5',
            archive_events_days:null,archive_posts_days:null,reply_anon_allowed:true,features:null};
 let brand={...BRAND_DEF};
 const httpsUrl=u=>/^https:\/\/[^"'()\s\\]+$/.test(u||'')?u:null;  // nur das darf in url(...) landen
@@ -600,7 +600,7 @@ async function logout(){loginMsg='';hint.innerHTML='';
 // ---------- Zwei-Faktor-Anmeldung ----------
 // Supabase prüft den Code; die DB-Regeln sehen die erreichte Stufe im Token (aal1 / aal2).
 const factors=async()=>((await sb.auth.mfa.listFactors()).data?.totp||[]).filter(f=>f.status==='verified');
-const NEED_DB=31;   // bei jeder neuen Migration hier UND in der Migration hochzählen
+const NEED_DB=32;   // bei jeder neuen Migration hier UND in der Migration hochzählen
 let dbState={v:null,ok:true,missing:[]};
 async function checkDb(){
   // db_check() legt pruefen.sql an und nennt jede fehlende Datei einzeln – genauer als die Versionsnummer,
@@ -714,7 +714,7 @@ async function viewMfaEnroll(forced){   // Einrichtung, bei Pflicht ohne Ausweg
   // issuer = Name der App aus den Einstellungen; den Kontonamen (E-Mail) setzt Supabase selbst.
   // Ohne issuer steht in der Authenticator-App die nackte Projekt-Adresse.
   const en=await sb.auth.mfa.enroll({factorType:'totp',
-    issuer:(brand.name||'Eventplaner').replace(/[:/?#]/g,' ').trim().slice(0,40)||'Eventplaner',
+    issuer:(brand.name||BRAND_DEF.name).replace(/[:/?#]/g,' ').trim().slice(0,40)||BRAND_DEF.name,
     friendlyName:'App '+Date.now()});
   if(en.error)return $('#qr').innerHTML=`<p class="err">${esc(de(en.error.message))}</p>`;
   const {id,totp}=en.data; made=id;
